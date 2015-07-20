@@ -60,6 +60,11 @@ static struct meta_dirent root_dir_dirents[] = {
 	  .type = IA_IFREG,
 	  .hook = meta_measure_file_hook,
 	},
+/* TODO:hs: update autotools scripts */
+	{ .name = "analyzethis",
+	  .type = IA_IFDIR,
+	  .hook = meta_analyzethis_dir_hook,
+	},
 	{ .name = NULL }
 };
 
