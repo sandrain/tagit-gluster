@@ -35,7 +35,7 @@ analyzethis_submit_file_write (xlator_t *this, fd_t *fd,
 
 	str = iov[0].iov_base;
 
-	return 0;
+	return iov_length (iov, count);
 }
 
 
