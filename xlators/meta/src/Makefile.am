@@ -30,11 +30,14 @@ meta_la_SOURCES = meta.c meta-helpers.c meta-defaults.c \
 	mallinfo-file.c \
 	meminfo-file.c \
 	measure-file.c \
-	profile-file.c \
-	analyzethis-submit.c \
-	analyzethis-jobs.c \
-	analyzethis-self.c \
-	analyzethis.c
+	profile-file.c
+
+if ENABLE_ANALYZETHIS
+meta_la_SOURCES += analyzethis-submit.c \
+		   analyzethis-jobs.c \
+		   analyzethis-self.c \
+		   analyzethis.c
+endif
 
 meta_la_LIBADD = $(top_builddir)/libglusterfs/src/libglusterfs.la
 

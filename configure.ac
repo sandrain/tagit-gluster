@@ -604,6 +604,26 @@ fi
 
 # end QEMU_BLOCK section
 
+# ANALYZETHIS section
+
+AC_ARG_ENABLE([analyzethis],
+	        AC_HELP_STRING([--enable-analyzethis],
+			[Build AnalyzeThis features and translators]),
+		[],
+		[enable_analyzethis=no])
+
+# any necessary libraries?
+#if test "x$enable_analyzethis" != "xno"; then
+#fi
+
+BUILD_ANALYZETHIS=no
+if test "x${enable_analyzethis}" != "xno"; then
+  BUILD_ANALYZETHIS=yes
+  AC_DEFINE(HAVE_ANALYZETHIS, 1, [enable AnalyzeThis])
+fi
+
+# end ANALYZETHIS section
+
 # EPOLL section
 AC_ARG_ENABLE([epoll],
               AC_HELP_STRING([--disable-epoll],
@@ -1076,6 +1096,9 @@ if test "x${GF_HOST_OS}" != "xGF_LINUX_HOST_OS" ; then
 fi
 AC_SUBST(UMOUNTD_SUBDIR)
 
+# enable/disable AnalyzeThis
+AM_CONDITIONAL([ENABLE_ANALYZETHIS], [test x$BUILD_ANALYZETHIS = xyes])
+
 # enable/disable QEMU
 AM_CONDITIONAL([ENABLE_QEMU_BLOCK], [test x$BUILD_QEMU_BLOCK = xyes])
 
@@ -1343,4 +1366,5 @@ echo "Encryption xlator    : $BUILD_CRYPT_XLATOR"
 echo "Unit Tests           : $BUILD_UNITTEST"
 echo "POSIX ACLs           : $BUILD_POSIX_ACLS"
 echo "Data Classification  : $BUILD_GFDB"
+echo "AnalyzeThis          : $BUILD_ANALYZETHIS"
 echo
