@@ -167,6 +167,8 @@ AC_CONFIG_FILES([Makefile
                 xlators/features/bit-rot/src/Makefile
                 xlators/features/bit-rot/src/stub/Makefile
                 xlators/features/bit-rot/src/bitd/Makefile
+		xlators/features/imess/Makefile
+		xlators/features/imess/src/Makefile
                 xlators/playground/Makefile
                 xlators/playground/template/Makefile
                 xlators/playground/template/src/Makefile
@@ -608,6 +610,26 @@ fi
 
 
 # end QEMU_BLOCK section
+
+# IMESS section
+
+AC_ARG_ENABLE([imess],
+		AC_HELP_STRING([--enable-imess],
+			[Build iMess translator]),
+		[],
+		[enable_imess=no])
+
+# any necessary libraries?
+#if test "x$enable_imess" != "xno"; then
+#fi
+
+BUILD_IMESS=no
+if test "x${enable_imess}" != "xno"; then
+  BUILD_IMESS=yes
+  AC_DEFINE(HAVE_IMESS, 1, [enable iMess])
+fi
+
+# end IMESS section
 
 # ANALYZETHIS section
 
@@ -1371,5 +1393,6 @@ echo "Encryption xlator    : $BUILD_CRYPT_XLATOR"
 echo "Unit Tests           : $BUILD_UNITTEST"
 echo "POSIX ACLs           : $BUILD_POSIX_ACLS"
 echo "Data Classification  : $BUILD_GFDB"
+echo "iMess                : $BUILD_IMESS"
 echo "AnalyzeThis          : $BUILD_ANALYZETHIS"
 echo
