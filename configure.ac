@@ -620,11 +620,19 @@ AC_ARG_ENABLE([imess],
 		[enable_imess=no])
 
 # any necessary libraries?
-#if test "x$enable_imess" != "xno"; then
-#fi
+if test "x${enable_imess}" != "xno"; then
+  PKG_CHECK_MODULES([SQLITE], [sqlite3 >= 3.7.10],
+		    [HAVE_SQLITE="yes"],
+		    [HAVE_SQLITE="no"])
+fi
+
+if test "x${enable_imess}" != "xno" -a "x${HAVE_SQLITE}" = "xno"; then
+  echo "iMess translator requires >=sqlite-3.7.17, but not found."
+  exit 1
+fi
 
 BUILD_IMESS=no
-if test "x${enable_imess}" != "xno"; then
+if test "x${enable_imess}" != "xno" -a "x${HAVE_SQLITE}" = "xyes"; then
   BUILD_IMESS=yes
   AC_DEFINE(HAVE_IMESS, 1, [enable iMess])
 fi
@@ -1122,6 +1130,9 @@ if test "x${GF_HOST_OS}" != "xGF_LINUX_HOST_OS" ; then
         UMOUNTD_SUBDIR="contrib/umountd"
 fi
 AC_SUBST(UMOUNTD_SUBDIR)
+
+# enable/disable iMess
+AM_CONDITIONAL([ENABLE_IMESS], [test x$BUILD_IMESS = xyes])
 
 # enable/disable AnalyzeThis
 AM_CONDITIONAL([ENABLE_ANALYZETHIS], [test x$BUILD_ANALYZETHIS = xyes])
