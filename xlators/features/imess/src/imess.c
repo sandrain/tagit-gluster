@@ -20,7 +20,7 @@
  */
 
 static inline int
-insert_new_stat_attr(imess_priv_t *priv, struct iatt *buf, const char *path)
+put_stat_attr(imess_priv_t *priv, struct iatt *buf, const char *path)
 {
 	int ret = 0;
 	xdb_t *xdb = NULL;
@@ -32,10 +32,17 @@ insert_new_stat_attr(imess_priv_t *priv, struct iatt *buf, const char *path)
 	file.gfid = uuid_utoa(buf->ia_gfid);
 	file.path = path;
 
+	if (path) {
+		ret = xdb_insert_file(xdb, &file);
+		if (ret)
+			goto out;
+	}
+
 	iatt_to_stat(buf, &sb);
 
 	ret = xdb_insert_stat(xdb, &file, &sb);
 
+out:
 	return ret;
 }
 
@@ -67,9 +74,10 @@ imess_mkdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	if (op_errno)
 		goto out;
 
-	ret = insert_new_stat_attr(priv, buf, (const char *) cookie);
+	ret = put_stat_attr(priv, buf, (const char *) cookie);
 	if (ret)
-		gf_log(this->name, GF_LOG_ERROR, "xdb_insert_stat failed");
+		gf_log(this->name, GF_LOG_ERROR, "imess_mkdir_cbk: "
+				"xdb_insert_stat failed");
 
 out:
 	GF_FREE(cookie);
@@ -94,15 +102,42 @@ imess_create_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	if (op_errno)
 		goto out;
 
-	ret = insert_new_stat_attr(priv, buf, (const char *) cookie);
+	ret = put_stat_attr(priv, buf, (const char *) cookie);
 	if (ret)
-		gf_log(this->name, GF_LOG_ERROR, "xdb_insert_stat failed");
+		gf_log(this->name, GF_LOG_ERROR, "imess_create_cbk: "
+				"xdb_insert_stat failed");
 
 out:
 	GF_FREE(cookie);
         IMESS_STACK_UNWIND (create, frame, op_ret, op_errno, fd, inode, buf,
                             preparent, postparent, xdata);
 	return 0;
+}
+
+int
+imess_writev_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
+                  int32_t op_ret, int32_t op_errno,
+                  struct iatt *prebuf, struct iatt *postbuf, dict_t *xdata)
+{
+	int ret = 0;
+	imess_priv_t *priv = NULL;
+
+	priv = this->private;
+
+	if (op_errno)
+		goto out;
+
+#if 0
+	ret = put_stat_attr(priv, postbuf, NULL);
+	if (ret)
+		gf_log(this->name, GF_LOG_ERROR, "imess_writev_cbk: "
+				"xdb_insert_stat failed");
+#endif
+
+out:
+        IMESS_STACK_UNWIND (writev, frame, op_ret, op_errno, prebuf, postbuf,
+                            xdata);
+        return 0;
 }
 
 /*
@@ -159,6 +194,22 @@ imess_create (call_frame_t *frame, xlator_t *this, loc_t *loc,
 			   FIRST_CHILD(this), FIRST_CHILD(this)->fops->create,
 			   loc, flags, mode, umask, fd, xdata);
         return 0;
+}
+
+int
+imess_writev (call_frame_t *frame, xlator_t *this, fd_t *fd,
+              struct iovec *vector, int32_t count, off_t offset,
+	      uint32_t flags, struct iobref *iobref, dict_t *xdata)
+{
+	imess_priv_t *priv = NULL;
+
+	priv = this->private;
+
+        STACK_WIND (frame, imess_writev_cbk,
+                    FIRST_CHILD(this),
+                    FIRST_CHILD(this)->fops->writev,
+                    fd, vector, count, offset, flags, iobref, xdata);
+	return 0;
 }
 
 /*
@@ -285,6 +336,7 @@ struct xlator_fops fops = {
         .stat        = imess_stat,
         .mkdir       = imess_mkdir,
         .create      = imess_create,
+        .writev      = imess_writev,
 #if 0
         .readlink    = imess_readlink,
         .mknod       = imess_mknod,
@@ -296,7 +348,6 @@ struct xlator_fops fops = {
         .truncate    = imess_truncate,
         .open        = imess_open,
         .readv       = imess_readv,
-        .writev      = imess_writev,
         .statfs      = imess_statfs,
         .flush       = imess_flush,
         .fsync       = imess_fsync,

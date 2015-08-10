@@ -22,11 +22,13 @@ extern const char *xdb_schema_sqlstr;
 
 /* pre-compiled queries */
 enum {
-	INSERT_NEW_FILE = 0,
-	INSERT_NEW_ATTR,
-	INSERT_NEW_XDATA,
+	INSERT_FILE = 0,
+	INSERT_ATTR,
+	INSERT_XDATA,
+	INSERT_STAT,
+	GET_FID,
 
-	N_XDB_SQLS
+	XDB_N_SQLS,
 };
 
 #define __valptr(x)					\
@@ -34,16 +36,33 @@ enum {
 		if (!(x)) return -EINVAL;		\
 	} while (0);
 
-static const char *xdb_sqls[N_XDB_SQLS] = {
-/* INSERT_NEW_FILE */
-	"insert or replace into xdb_file (fid, gfid, path) "
-	"values ((select fid from xdb_file where gfid=?),?,?)",
-/* INSERT_NEW_ATTR */
-	"insert or ignore into xdb_attr (name) values (?)",
-/* INSERT_NEW_XDATA */
-	"insert or replace into xdb_xdata (fid, aid, ival, sval, val) values "
-	"((select fid from xdb_file where gfid=?),"
-	"(select aid from xdb_attr where name=?),?,?,?)",
+static const char *xdb_sqls[XDB_N_SQLS] = {
+/* INSERT_FILE */
+	"insert or replace into xdb_file (fid, gfid, path)\n"
+	"values ((select fid from xdb_file where gfid=?),?,?)\n",
+/* INSERT_ATTR */
+	"insert or ignore into xdb_attr (name) values (?)\n",
+/* INSERT_XDATA */
+	"insert or replace into xdb_xdata (fid, aid, ival, sval, val) values\n"
+	"((select fid from xdb_file where gfid=?),\n"
+	"(select aid from xdb_attr where name=?),?,?,?)\n",
+/* INSERT_STAT */
+	"insert into xdb_xdata (fid, aid, ival, sval, val)\n"
+	"select ? as fid, 1 as aid, ? as ival, null as sval, ? as val\n"
+	"union select ?,2,?,null,?\n"
+	"union select ?,3,?,null,?\n"
+	"union select ?,4,?,null,?\n"
+	"union select ?,5,?,null,?\n"
+	"union select ?,6,?,null,?\n"
+	"union select ?,7,?,null,?\n"
+	"union select ?,8,?,null,?\n"
+	"union select ?,9,?,null,?\n"
+	"union select ?,10,?,null,?\n"
+	"union select ?,11,?,null,?\n"
+	"union select ?,12,?,null,?\n"
+	"union select ?,13,?,null,?\n",
+/* GET_FID */
+	"select fid from xdb_file where gfid=?",
 };
 
 static inline int exec_simple_sql(xdb_t *self, const char *sql)
@@ -73,9 +92,39 @@ static inline int enable_mmap(xdb_t *self)
 	return exec_simple_sql(self, "PRAGMA mmap_size=1610612736");
 }
 
-/* create tables if not exist */
+static int get_fid(xdb_t *self, xdb_file_t *file, uint64_t *fid)
+{
+	int ret = 0;
+	sqlite3_stmt *stmt = self->stmts[GET_FID];
+
+	__valptr(fid);
+
+	ret = sqlite3_bind_text(stmt, 1, file->gfid, -1, SQLITE_STATIC);
+	if (ret) {
+		ret = -EIO;
+		goto out;
+	}
+
+	do {
+		ret = sqlite3_step(stmt);
+	} while (ret == SQLITE_BUSY);
+
+	if (ret == SQLITE_ROW) {
+		ret = 0;
+		*fid = sqlite3_column_int(stmt, 0);
+	}
+	else
+		ret = -ENOENT;
+
+out:
+	sqlite3_reset(stmt);
+	return ret;
+}
+
+/* create tables if not exist, precompile the sqls */
 static int db_initialize(xdb_t *self)
 {
+	int i = 0;
 	int ret = 0;
 	int ntables = 0;
 	sqlite3_stmt *stmt = NULL;
@@ -103,6 +152,17 @@ static int db_initialize(xdb_t *self)
 	}
 
 	sqlite3_finalize(stmt);
+
+	/* precompile sqls */
+	for (i = 0; i < XDB_N_SQLS; i++) {
+		ret = sqlite3_prepare_v2(self->conn, xdb_sqls[i], -1,
+					 &self->stmts[i], 0);
+		if (ret != SQLITE_OK) {
+			ret = -EIO;
+			goto out;
+		}
+	}
+
 	ret = 0;	/* previously, SQLITE_ROW (=100) */
 out:
 	return ret;
@@ -112,11 +172,8 @@ static int insert_file(xdb_t *self, xdb_file_t *file)
 {
 	int ret = 0;
 	sqlite3_stmt *stmt = NULL;
-	const char *sql = xdb_sqls[INSERT_NEW_FILE];
 
-	ret = sqlite3_prepare_v2(self->conn, sql, -1, &stmt, NULL);
-	if (ret != SQLITE_OK)
-		return -EIO;
+	stmt = self->stmts[INSERT_FILE];
 
 	ret = sqlite3_bind_text(stmt, 1, file->gfid, -1, SQLITE_STATIC);
 	ret |= sqlite3_bind_text(stmt, 2, file->gfid, -1, SQLITE_STATIC);
@@ -133,7 +190,88 @@ static int insert_file(xdb_t *self, xdb_file_t *file)
 	ret = ret == SQLITE_DONE ? 0 : -EIO;
 
 out:
-	sqlite3_finalize(stmt);
+	sqlite3_reset(stmt);
+	return ret;
+}
+
+static inline int
+bind_stat_attr(sqlite3_stmt *stmt, uint64_t fid, int *i, uint64_t ival,
+		void *val, int bytes)
+{
+	int ret = 0;
+	int ix = *i;
+
+	ret = sqlite3_bind_int64(stmt, ++ix, fid);
+	ret |= sqlite3_bind_int64(stmt, ++ix, ival);
+	ret |= sqlite3_bind_blob(stmt, ++ix, val, bytes, NULL);
+
+	if (ret == SQLITE_OK) {
+		*i = ix;
+		return 0;
+	}
+	else
+		return -EINVAL;
+}
+
+static inline int
+bind_stat(sqlite3_stmt *stmt, uint64_t fid, struct stat *sb)
+{
+	int ret = 0;
+	int i = 0;
+
+	if ((ret = bind_stat_attr(stmt, fid, &i, (uint64_t) sb->st_dev,
+			     &sb->st_dev, sizeof(sb->st_dev))) != 0)
+		goto out;
+
+	if ((ret = bind_stat_attr(stmt, fid, &i, (uint64_t) sb->st_ino,
+			     &sb->st_ino, sizeof(sb->st_ino))) != 0)
+		goto out;
+
+	if ((ret = bind_stat_attr(stmt, fid, &i, (uint64_t) sb->st_mode,
+			     &sb->st_mode, sizeof(sb->st_mode))) != 0)
+		goto out;
+
+	if ((ret = bind_stat_attr(stmt, fid, &i, (uint64_t) sb->st_nlink,
+			     &sb->st_nlink, sizeof(sb->st_nlink))) != 0)
+		goto out;
+
+	if ((ret = bind_stat_attr(stmt, fid, &i, (uint64_t) sb->st_uid,
+			     &sb->st_uid, sizeof(sb->st_uid))) != 0)
+		goto out;
+
+	if ((ret = bind_stat_attr(stmt, fid, &i, (uint64_t) sb->st_gid,
+			     &sb->st_gid, sizeof(sb->st_gid))) != 0)
+		goto out;
+
+	if ((ret = bind_stat_attr(stmt, fid, &i, (uint64_t) sb->st_rdev,
+			     &sb->st_rdev, sizeof(sb->st_rdev))) != 0)
+		goto out;
+
+	if ((ret = bind_stat_attr(stmt, fid, &i, (uint64_t) sb->st_size,
+			     &sb->st_size, sizeof(sb->st_size))) != 0)
+		goto out;
+
+	if ((ret = bind_stat_attr(stmt, fid, &i, (uint64_t) sb->st_blksize,
+			     &sb->st_blksize, sizeof(sb->st_blksize))) != 0)
+		goto out;
+
+	if ((ret = bind_stat_attr(stmt, fid, &i, (uint64_t) sb->st_blocks,
+			     &sb->st_blocks, sizeof(sb->st_blocks))) != 0)
+		goto out;
+
+	if ((ret = bind_stat_attr(stmt, fid, &i, (uint64_t) sb->st_atime,
+			     &sb->st_atime, sizeof(sb->st_atime))) != 0)
+		goto out;
+
+	if ((ret = bind_stat_attr(stmt, fid, &i, (uint64_t) sb->st_mtime,
+			     &sb->st_mtime, sizeof(sb->st_mtime))) != 0)
+		goto out;
+
+	if ((ret = bind_stat_attr(stmt, fid, &i, (uint64_t) sb->st_ctime,
+			     &sb->st_ctime, sizeof(sb->st_ctime))) != 0)
+		goto out;
+
+out:
 	return ret;
 }
 
@@ -147,11 +285,8 @@ static inline int insert_single_attr(xdb_t *self, xdb_attr_t *attr)
 {
 	int ret = 0;
 	sqlite3_stmt *stmt = NULL;
-	const char *sql = xdb_sqls[INSERT_NEW_ATTR];
 
-	ret = sqlite3_prepare_v2(self->conn, sql, -1, &stmt, NULL);
-	if (ret != SQLITE_OK)
-		return -EIO;
+	stmt = self->stmts[INSERT_XDATA];
 
 	ret = sqlite3_bind_text(stmt, 1, attr->name, -1, SQLITE_STATIC);
 	if (ret) {
@@ -166,7 +301,7 @@ static inline int insert_single_attr(xdb_t *self, xdb_attr_t *attr)
 	ret = ret == SQLITE_DONE ? 0 : -EIO;
 
 out:
-	sqlite3_finalize(stmt);
+	sqlite3_reset(stmt);
 	return ret;
 }
 
@@ -198,15 +333,12 @@ insert_xdata(xdb_t *self, xdb_file_t *file, xdb_attr_t *attr, uint64_t n_attr)
 	int ret = 0;
 	uint64_t i;
 	sqlite3_stmt *stmt = NULL;
-	const char *sql = xdb_sqls[INSERT_NEW_XDATA];
 
 	ret = insert_attr_names(self, attr, n_attr);
 	if (ret)
 		goto out;
 
-	ret = sqlite3_prepare_v2(self->conn, sql, -1, &stmt, NULL);
-	if (ret != SQLITE_OK)
-		return -EIO;
+	stmt = self->stmts[INSERT_XDATA];
 
 	tx_begin(self);
 
@@ -254,27 +386,21 @@ insert_xdata(xdb_t *self, xdb_file_t *file, xdb_attr_t *attr, uint64_t n_attr)
 	ret = 0;
 
 out:
+	sqlite3_reset(stmt);
 	return ret;
 }
 
 enum {
-	/* let's be realistic. there exist some fields which are not searched
-	 * obviously.
-	 * st_dev, ino, nlink, rdev, blksize, blocks
-	 */
-	/*
 	XDB_ST_DEV	= 0,
 	XDB_ST_INO,
+	XDB_ST_MODE,
 	XDB_ST_NLINK,
-	XDB_ST_RDEV,
-	XDB_ST_BLKSIZE,
-	XDB_ST_BLOCKS,
-	*/
-
-	XDB_ST_MODE	= 0,
 	XDB_ST_UID,
 	XDB_ST_GID,
+	XDB_ST_RDEV,
 	XDB_ST_SIZE,
+	XDB_ST_BLKSIZE,
+	XDB_ST_BLOCKS,
 	XDB_ST_ATIME,
 	XDB_ST_MTIME,
 	XDB_ST_CTIME,
@@ -303,49 +429,6 @@ fill_attr_time(xdb_attr_t *attr, const char *name, time_t *time)
 	attr->bytes = sizeof(*time);
 }
 
-static int
-convert_stat_attrs(struct stat *stat, xdb_attr_t **attr, uint64_t *n)
-{
-	int ret = 0;
-	xdb_attr_t *attrs = NULL;
-
-	attrs = calloc(XDB_N_ST_ATTRS, sizeof(xdb_attr_t));
-	if (!attrs)
-		return -ENOMEM;
-
-#if 0
-	fill_attr_integer(&attrs[XDB_ST_DEV], "st_dev", stat->st_dev,
-			  &stat->st_dev, sizeof(stat->st_dev));
-	fill_attr_integer(&attrs[XDB_ST_INO], "st_ino", stat->st_ino,
-			  &stat->st_ino, sizeof(stat->st_ino));
-	fill_attr_integer(&attrs[XDB_ST_NLINK], "st_nlink", stat->st_nlink,
-			  &stat->st_nlink, sizeof(stat->st_nlink));
-	fill_attr_integer(&attrs[XDB_ST_RDEV], "st_rdev", stat->st_rdev,
-			  &stat->st_rdev, sizeof(stat->st_rdev));
-	fill_attr_integer(&attrs[XDB_ST_BLKSIZE], "st_blksize",
-			  stat->st_blksize,
-			  &stat->st_blksize, sizeof(stat->st_blksize));
-	fill_attr_integer(&attrs[XDB_ST_BLOCKS], "st_blocks", stat->st_blocks,
-			  &stat->st_blocks, sizeof(stat->st_blocks));
-#endif
-	fill_attr_integer(&attrs[XDB_ST_MODE], "st_mode", stat->st_mode,
-			  &stat->st_mode, sizeof(stat->st_mode));
-	fill_attr_integer(&attrs[XDB_ST_UID], "st_uid", stat->st_uid,
-			  &stat->st_uid, sizeof(stat->st_uid));
-	fill_attr_integer(&attrs[XDB_ST_GID], "st_gid", stat->st_gid,
-			  &stat->st_gid, sizeof(stat->st_gid));
-	fill_attr_integer(&attrs[XDB_ST_SIZE], "st_size", stat->st_size,
-			  &stat->st_size, sizeof(stat->st_size));
-	fill_attr_time(&attrs[XDB_ST_ATIME], "st_atime", &stat->st_atime);
-	fill_attr_time(&attrs[XDB_ST_MTIME], "st_mtime", &stat->st_mtime);
-	fill_attr_time(&attrs[XDB_ST_CTIME], "st_ctime", &stat->st_ctime);
-
-	*attr = attrs;
-	*n = XDB_N_ST_ATTRS;
-
-	return ret;
-}
-
 /* external interface */
 
 int xdb_init (/* out */ xdb_t **xdb, const char *path)
@@ -354,7 +437,7 @@ int xdb_init (/* out */ xdb_t **xdb, const char *path)
 	sqlite3 *conn = NULL;
 	xdb_t *self = NULL;
 
-	self = calloc(1, sizeof(*self));
+	self = calloc(1, sizeof(*self) + sizeof(sqlite3_stmt*)*XDB_N_SQLS);
 	if (!self)
 		return -ENOMEM;
 
@@ -416,20 +499,30 @@ int xdb_insert_record (xdb_t *xdb, xdb_file_t *file,
 int xdb_insert_stat (xdb_t *xdb, xdb_file_t *file, struct stat *stat)
 {
 	int ret = 0;
-	xdb_attr_t *attr = NULL;
-	uint64_t n;
+	uint64_t fid = 0;
+	sqlite3_stmt *stmt = NULL;
 
 	__valptr(xdb);
 	__valptr(file);
 	__valptr(stat);
 
-	ret = convert_stat_attrs(stat, &attr, &n);
+	stmt = xdb->stmts[INSERT_STAT];
+
+	ret = get_fid(xdb, file, &fid);
 	if (ret)
 		goto out;
 
-	ret = xdb_insert_record(xdb, file, attr, n);
-	free(attr);
+	ret = bind_stat(stmt, fid, stat);
+	if (ret)
+		goto out;
+
+	do {
+		ret = sqlite3_step(stmt);
+	} while (ret == SQLITE_BUSY);
+
+	ret = ret == SQLITE_DONE ? 0 : -EIO;
 out:
+	sqlite3_reset(stmt);
 	return ret;
 }
 

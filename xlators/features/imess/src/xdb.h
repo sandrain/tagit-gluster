@@ -21,6 +21,7 @@
 struct _xdb {
 	sqlite3    *conn;
 	const char *dbpath;
+	sqlite3_stmt *stmts[0];
 };
 
 typedef struct _xdb xdb_t;
@@ -44,23 +45,6 @@ enum {
 	N_XDB_TYPES
 };
 
-/* attribute names for stat(2) */
-#if 0
-#define	XDB_ANAME_ST_DEV	"st_dev"
-#define XDB_ANAME_ST_INO	"st_ino"
-#define XDB_ANAME_ST_MODE	"st_mode"
-#define XDB_ANAME_ST_NLINK	"st_nlink"
-#define XDB_ANAME_ST_UID	"st_uid"
-#define XDB_ANAME_ST_GID	"st_gid"
-#define XDB_ANAME_ST_RDEV	"st_rdev"
-#define XDB_ANAME_ST_SIZE	"st_size"
-#define XDB_ANAME_ST_BLKSIZE	"st_blksize"
-#define XDB_ANAME_ST_BLOCKS	"st_blocks"
-#define XDB_ANAME_ST_ATIME	"st_atime"
-#define XDB_ANAME_ST_MTIME	"st_mtime"
-#define XDB_ANAME_ST_CTIME	"st_ctime"
-#endif
-
 struct _xdb_attr {
 	const char *name;	/* attribute name, for stat(2) attr, use
 				   IMESS_XDB_ANAME_xx */
@@ -69,13 +53,6 @@ struct _xdb_attr {
 	char       *blob;	/* raw data */
 	uint64_t    ival;	/* integer parsed */
 	const char *sval;	/* string parsed */
-
-#if 0
-	union {
-		uint64_t    ival;	/* integer parsed */
-		const char *sval;	/* string parsed */
-	} val; 
-#endif
 };
 
 typedef struct _xdb_attr xdb_attr_t;
@@ -126,6 +103,11 @@ int xdb_exit (xdb_t *xdb);
  */
 int xdb_insert_record (xdb_t *xdb, xdb_file_t *file,
 			xdb_attr_t *attr, uint64_t n_attr);
+
+static inline int xdb_insert_file (xdb_t *xdb, xdb_file_t *file)
+{
+	return xdb_insert_record(xdb, file, NULL, 0);
+}
 
 /**
  * xdb_insert_stat: populate the @stat attributes.
