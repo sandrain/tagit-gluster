@@ -21,7 +21,7 @@
 struct _xdb {
 	sqlite3    *conn;
 	const char *dbpath;
-	sqlite3_stmt *stmts[0];
+	const char *err;
 };
 
 typedef struct _xdb xdb_t;
@@ -136,6 +136,8 @@ int xdb_insert_stat (xdb_t *xdb, xdb_file_t *file, struct stat *stat);
 int xdb_query_files (xdb_t *xdb, xdb_search_cond_t *cond,
 			/* out */ xdb_file_t **files,
 			/* out */ uint64_t n_files);
+
+int xdb_measure (xdb_t *xdb, const char *query);
 
 #endif	/* _IMESS_XDB_H_ */
 

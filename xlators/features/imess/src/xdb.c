@@ -9,6 +9,7 @@
 #include "config.h"
 #endif
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
@@ -38,8 +39,7 @@ enum {
 
 static const char *xdb_sqls[XDB_N_SQLS] = {
 /* INSERT_FILE */
-	"insert or replace into xdb_file (fid, gfid, path)\n"
-	"values ((select fid from xdb_file where gfid=?),?,?)\n",
+	"insert into xdb_file (gfid, path) values (?,?)\n",
 /* INSERT_ATTR */
 	"insert or ignore into xdb_attr (name) values (?)\n",
 /* INSERT_XDATA */
@@ -95,9 +95,15 @@ static inline int enable_mmap(xdb_t *self)
 static int get_fid(xdb_t *self, xdb_file_t *file, uint64_t *fid)
 {
 	int ret = 0;
-	sqlite3_stmt *stmt = self->stmts[GET_FID];
-
+	sqlite3_stmt *stmt = NULL;
+		
 	__valptr(fid);
+
+	ret = sqlite3_prepare_v2(self->conn, xdb_sqls[GET_FID], -1, &stmt, 0);
+	if (ret) {
+		ret = -EIO;
+		goto out;
+	}
 
 	ret = sqlite3_bind_text(stmt, 1, file->gfid, -1, SQLITE_STATIC);
 	if (ret) {
@@ -117,14 +123,15 @@ static int get_fid(xdb_t *self, xdb_file_t *file, uint64_t *fid)
 		ret = -ENOENT;
 
 out:
-	sqlite3_reset(stmt);
+	if (stmt)
+		sqlite3_finalize(stmt);
+
 	return ret;
 }
 
 /* create tables if not exist, precompile the sqls */
 static int db_initialize(xdb_t *self)
 {
-	int i = 0;
 	int ret = 0;
 	int ntables = 0;
 	sqlite3_stmt *stmt = NULL;
@@ -151,20 +158,10 @@ static int db_initialize(xdb_t *self)
 		}
 	}
 
-	sqlite3_finalize(stmt);
-
-	/* precompile sqls */
-	for (i = 0; i < XDB_N_SQLS; i++) {
-		ret = sqlite3_prepare_v2(self->conn, xdb_sqls[i], -1,
-					 &self->stmts[i], 0);
-		if (ret != SQLITE_OK) {
-			ret = -EIO;
-			goto out;
-		}
-	}
-
 	ret = 0;	/* previously, SQLITE_ROW (=100) */
 out:
+	if (stmt)
+		sqlite3_finalize(stmt);
 	return ret;
 }
 
@@ -173,11 +170,14 @@ static int insert_file(xdb_t *self, xdb_file_t *file)
 	int ret = 0;
 	sqlite3_stmt *stmt = NULL;
 
-	stmt = self->stmts[INSERT_FILE];
+	ret = sqlite3_prepare_v2(self->conn, xdb_sqls[INSERT_FILE], -1, &stmt, 0);
+	if (ret) {
+		ret = -EIO;
+		goto out;
+	}
 
 	ret = sqlite3_bind_text(stmt, 1, file->gfid, -1, SQLITE_STATIC);
-	ret |= sqlite3_bind_text(stmt, 2, file->gfid, -1, SQLITE_STATIC);
-	ret |= sqlite3_bind_text(stmt, 3, file->path, -1, SQLITE_STATIC);
+	ret |= sqlite3_bind_text(stmt, 2, file->path, -1, SQLITE_STATIC);
 	if (ret) {
 		ret = -EIO;
 		goto out;
@@ -190,7 +190,11 @@ static int insert_file(xdb_t *self, xdb_file_t *file)
 	ret = ret == SQLITE_DONE ? 0 : -EIO;
 
 out:
-	sqlite3_reset(stmt);
+	if (ret)
+		self->err = sqlite3_errmsg(self->conn);
+	if (stmt)
+		sqlite3_finalize(stmt);
+
 	return ret;
 }
 
@@ -286,7 +290,11 @@ static inline int insert_single_attr(xdb_t *self, xdb_attr_t *attr)
 	int ret = 0;
 	sqlite3_stmt *stmt = NULL;
 
-	stmt = self->stmts[INSERT_XDATA];
+	ret = sqlite3_prepare_v2(self->conn, xdb_sqls[INSERT_XDATA], -1, &stmt, 0);
+	if (ret) {
+		ret = -EIO;
+		goto out;
+	}
 
 	ret = sqlite3_bind_text(stmt, 1, attr->name, -1, SQLITE_STATIC);
 	if (ret) {
@@ -301,7 +309,8 @@ static inline int insert_single_attr(xdb_t *self, xdb_attr_t *attr)
 	ret = ret == SQLITE_DONE ? 0 : -EIO;
 
 out:
-	sqlite3_reset(stmt);
+	if (stmt)
+		sqlite3_finalize(stmt);
 	return ret;
 }
 
@@ -338,7 +347,9 @@ insert_xdata(xdb_t *self, xdb_file_t *file, xdb_attr_t *attr, uint64_t n_attr)
 	if (ret)
 		goto out;
 
-	stmt = self->stmts[INSERT_XDATA];
+	ret = sqlite3_prepare_v2(self->conn, xdb_sqls[INSERT_XDATA], -1, &stmt, 0);
+	if (ret)
+		goto out;
 
 	tx_begin(self);
 
@@ -386,7 +397,8 @@ insert_xdata(xdb_t *self, xdb_file_t *file, xdb_attr_t *attr, uint64_t n_attr)
 	ret = 0;
 
 out:
-	sqlite3_reset(stmt);
+	if (stmt)
+		sqlite3_finalize(stmt);
 	return ret;
 }
 
@@ -506,7 +518,11 @@ int xdb_insert_stat (xdb_t *xdb, xdb_file_t *file, struct stat *stat)
 	__valptr(file);
 	__valptr(stat);
 
-	stmt = xdb->stmts[INSERT_STAT];
+	ret = sqlite3_prepare_v2(xdb->conn, xdb_sqls[INSERT_STAT], -1, &stmt, 0);
+	if (ret) {
+		ret = -EIO;
+		goto out;
+	}
 
 	ret = get_fid(xdb, file, &fid);
 	if (ret)
@@ -522,7 +538,11 @@ int xdb_insert_stat (xdb_t *xdb, xdb_file_t *file, struct stat *stat)
 
 	ret = ret == SQLITE_DONE ? 0 : -EIO;
 out:
-	sqlite3_reset(stmt);
+	if (ret == -EIO)
+		xdb->err = sqlite3_errmsg(xdb->conn);
+
+	sqlite3_finalize(stmt);
+
 	return ret;
 }
 
@@ -533,5 +553,33 @@ int xdb_query_files (xdb_t *xdb, xdb_search_cond_t *cond,
 	__valptr(xdb);
 
 	return 0;
+}
+
+
+int xdb_measure (xdb_t *xdb, const char *query)
+{
+	int ret = 0;
+	sqlite3_stmt *stmt = NULL;
+	char buf[1024];
+
+	__valptr(xdb);
+
+	ret = sqlite3_prepare_v2(xdb->conn, query, -1, &stmt, 0);
+	if (ret != SQLITE_OK) {
+		ret = -EIO;
+		goto out;
+	}
+
+	while (sqlite3_step(stmt) == SQLITE_ROW) {
+		sprintf(buf, "%s:%s",
+			sqlite3_column_text(stmt, 0),
+			sqlite3_column_text(stmt, 1));
+	}
+
+	ret = 0;
+out:
+	if (stmt)
+		sqlite3_finalize(stmt);
+	return ret;
 }
 

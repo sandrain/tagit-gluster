@@ -34,13 +34,21 @@ put_stat_attr(imess_priv_t *priv, struct iatt *buf, const char *path)
 
 	if (path) {
 		ret = xdb_insert_file(xdb, &file);
-		if (ret)
+		if (ret) {
+			gf_log("imess", GF_LOG_ERROR,
+			       "put_stat_attr: xdb_insert_file failed (%s, %s)",
+			       path, xdb->err);
 			goto out;
+		}
 	}
 
 	iatt_to_stat(buf, &sb);
 
 	ret = xdb_insert_stat(xdb, &file, &sb);
+	if (ret)
+		gf_log("imess", GF_LOG_ERROR,
+		       "put_stat_attr: xdb_insert_stat failed (%s)",
+		       xdb->err);
 
 out:
 	return ret;
@@ -140,9 +148,65 @@ out:
         return 0;
 }
 
+int
+imess_lookup_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
+                  int32_t op_ret, int32_t op_errno,
+                  inode_t *inode, struct iatt *buf,
+                  dict_t *xdata, struct iatt *postparent)
+{
+        IMESS_STACK_UNWIND (lookup, frame, op_ret, op_errno, inode, buf,
+                            xdata, postparent);
+	return 0;
+}
+
 /*
  * xlator file operations.
  */
+
+int32_t
+imess_lookup (call_frame_t *frame, xlator_t *this, loc_t *loc, dict_t *xdata)
+{
+	int ret = 0;
+	imess_priv_t *priv = NULL;
+	xdb_t *xdb = NULL;
+
+	priv = this->private;
+
+#if 0
+	gf_log (this->name, GF_LOG_INFO, "imess lookup: %s", loc->path);
+#endif
+
+	if (strcmp(loc->path, "/imessmeasure"))
+		goto pass;
+
+	xdb = priv->xdb;
+
+	gf_log (this->name, GF_LOG_INFO, "imess lookup: sending query");
+#if 0
+	ret = xdb_measure(xdb, "select gfid,path from xdb_file where fid in "
+                               "(select fid from xdb_xdata "
+			       "where aid=9 and ival=1919191919)");
+#endif
+	/* this will be slower, not using the index? */
+	ret = xdb_measure(xdb, "select gfid,path from xdb_file "
+			       "where path like '%never-existing-file.nono'");
+	if (ret)
+		gf_log (this->name, GF_LOG_ERROR, "xdb_measure failed.");
+	else
+		gf_log (this->name, GF_LOG_INFO, "query successfully finished");
+
+	/* This line gives 10s synchronous delay to the: touch imessmeasure.
+	sleep(10);
+	*/
+
+pass:
+        STACK_WIND (frame, imess_lookup_cbk,
+                    FIRST_CHILD(this),
+                    FIRST_CHILD(this)->fops->lookup,
+                    loc, xdata);
+
+        return 0;
+}
 
 int
 imess_stat (call_frame_t *frame, xlator_t *this, loc_t *loc, dict_t *xdata)
@@ -333,6 +397,7 @@ struct xlator_cbks cbks = {
 };
 
 struct xlator_fops fops = {
+	.lookup      = imess_lookup,
         .stat        = imess_stat,
         .mkdir       = imess_mkdir,
         .create      = imess_create,
