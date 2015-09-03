@@ -7206,6 +7206,7 @@ int dht_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata)
 	xlator_t       *subvol = NULL;
         int             i = 0;
         int             call_cnt = 0;
+	int             all = 0;
 
 	if (!xdata)
 		goto call_default;
@@ -7220,9 +7221,12 @@ int dht_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata)
 	if (ret)
 		goto call_default;
 
+	if (strcmp(clist_str, "all") == 0)
+		all = 1;
+
 	for (i = 0; i < conf->subvolume_cnt; i++) {
 		subvol = conf->subvolumes[i];
-		if (gf_strstr(clist_str, ",", subvol->name))
+		if (!all && gf_strstr(clist_str, ",", subvol->name))
 			continue;
 
 		STACK_WIND (frame, dht_ipc_cbk, subvol, subvol->fops->ipc,

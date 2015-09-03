@@ -276,11 +276,49 @@ imess_debug_dir_fill (xlator_t *this, inode_t *dir, struct meta_dirent **dp)
 }
 
 /*
+ * debug/all
+ */
+
+static struct meta_dirent imess_debug_all_dir_dirents[] = {
+	DOT_DOTDOT,
+	{ .name = "xfile",
+	  .type = IA_IFREG,
+	  .hook = meta_imess_xfile_hook,
+	},
+	{ .name = "xname",
+	  .type = IA_IFREG,
+	  .hook = meta_imess_xname_hook,
+	},
+	{ .name = "xdata",
+	  .type = IA_IFREG,
+	  .hook = meta_imess_xdata_hook,
+	},
+	{ .name = NULL },
+};
+
+struct meta_ops imess_debug_all_dir_ops = {
+	.fixed_dirents = imess_debug_all_dir_dirents,
+};
+
+int
+meta_imess_debug_all_dir_hook (call_frame_t *frame, xlator_t *this,
+				loc_t *loc, dict_t *xdata)
+{
+	meta_ops_set (loc->inode, this, &imess_debug_all_dir_ops);
+
+	return 0;
+}
+
+/*
  * debug dir
  */
 
 static struct meta_dirent imess_debug_dirents[] = {
 	DOT_DOTDOT,
+	{ .name = "all",
+	  .type = IA_IFDIR,
+	  .hook = meta_imess_debug_all_dir_hook,
+	},
 	{ .name = NULL },
 };
 
