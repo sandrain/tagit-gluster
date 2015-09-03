@@ -36,6 +36,8 @@ enum {
 	GET_FID,
 	GET_COUNT_XFILE,
 	GET_ALL_XFILE,
+	GET_ALL_XNAME,
+	GET_ALL_XDATA,
 
 	XDB_N_SQLS,
 };
@@ -80,7 +82,11 @@ static const char *xdb_sqls[XDB_N_SQLS] = {
 /* GET_COUNT_XFILE */
 	"select count(*) from xdb_xfile",
 /* GET_ALL_XFILE */
-	"select path,name from xdb_xfile",
+	"select fid,gfid,path,name from xdb_xfile",
+/* GET_ALL_XNAME */
+	"select nid,name from xdb_xname",
+/* GET_ALL_XDATA */
+	"select xid,fid,nid,ival,sval from xdb_xdata",
 };
 
 /* max 1.5 GB currently */
@@ -609,7 +615,55 @@ int xdb_read_all_xfile (xdb_t *xdb, dict_t *xdata)
 
 	while ((ret = sqlite3_step(stmt)) == SQLITE_ROW) {
 		sprintf(keybuf, "%llu", (unsigned long long) rows);
-		sprintf(buf, "%s%s", sqlite3_column_text(stmt, 0),
+		sprintf(buf, "%d|%s|%s%s", sqlite3_column_int(stmt, 0),
+				           sqlite3_column_text(stmt, 1),
+					   sqlite3_column_text(stmt, 2),
+					   sqlite3_column_text(stmt, 3));
+		ret = dict_set_dynstr_with_alloc (xdata, keybuf, buf);
+		if (ret) {
+			ret = -EIO;
+			goto out;
+		}
+
+		rows++;
+	}
+
+	if (ret != SQLITE_DONE) {
+		ret = -EIO;
+		goto out;
+	}
+
+	ret = dict_set_uint64 (xdata, "count", rows);
+	ret = 0;
+
+out:
+	if (stmt)
+		sqlite3_finalize(stmt);
+	return ret;
+}
+
+int xdb_read_all_xname (xdb_t *xdb, dict_t *xdata)
+{
+	int ret = 0;
+	uint64_t rows = 0;
+	sqlite3_stmt *stmt = NULL;
+	char keybuf[10] = {0,};
+	char buf[1024] = {0,};
+
+	__valptr(xdb);
+	__valptr(xdata);
+
+	ret = sqlite3_prepare_v2(xdb->conn, xdb_sqls[GET_ALL_XNAME],
+				 -1, &stmt, 0);
+
+	if (ret != SQLITE_OK) {
+		ret = -EIO;
+		goto out;
+	}
+
+	while ((ret = sqlite3_step(stmt)) == SQLITE_ROW) {
+		sprintf(keybuf, "%llu", (unsigned long long) rows);
+		sprintf(buf, "%d|%s", sqlite3_column_int(stmt, 0),
 				      sqlite3_column_text(stmt, 1));
 		ret = dict_set_dynstr_with_alloc (xdata, keybuf, buf);
 		if (ret) {
@@ -634,68 +688,52 @@ out:
 	return ret;
 }
 
-#if 0
-int xdb_insert_record (xdb_t *xdb, xdb_file_t *file,
-			xdb_attr_t *attr, uint64_t n_attr)
+int xdb_read_all_xdata (xdb_t *xdb, dict_t *xdata)
 {
 	int ret = 0;
-
-	__valptr(xdb);
-
-	ret = insert_file(xdb, file);
-	if (ret)
-		return -EIO;
-
-	if (!attr || n_attr == 0)
-		return ret;
-
-	ret = insert_xdata(xdb, file, attr, n_attr);
-
-	return ret == 0 ? 0 : -EIO;
-}
-
-int xdb_query_files (xdb_t *xdb, xdb_search_cond_t *cond,
-			/* out */ xdb_file_t **files,
-			/* out */ uint64_t n_files)
-{
-	__valptr(xdb);
-
-	return 0;
-}
-
-
-int xdb_measure (xdb_t *xdb, const char *query)
-{
-	int ret = 0;
+	uint64_t rows = 0;
 	sqlite3_stmt *stmt = NULL;
-	char buf[1024];
+	char keybuf[10] = {0,};
+	char buf[1024] = {0,};
 
 	__valptr(xdb);
+	__valptr(xdata);
 
-	ret = sqlite3_prepare_v2(xdb->conn, query, -1, &stmt, 0);
+	ret = sqlite3_prepare_v2(xdb->conn, xdb_sqls[GET_ALL_XDATA],
+				 -1, &stmt, 0);
+
 	if (ret != SQLITE_OK) {
 		ret = -EIO;
 		goto out;
 	}
 
-	while (sqlite3_step(stmt) == SQLITE_ROW) {
-		sprintf(buf, "%s:%s",
-			sqlite3_column_text(stmt, 0),
-			sqlite3_column_text(stmt, 1));
+	while ((ret = sqlite3_step(stmt)) == SQLITE_ROW) {
+		sprintf(keybuf, "%llu", (unsigned long long) rows);
+		sprintf(buf, "%d|%d|%d|%d|%s", sqlite3_column_int(stmt, 0),
+				               sqlite3_column_int(stmt, 1),
+				               sqlite3_column_int(stmt, 2),
+				               sqlite3_column_int(stmt, 3),
+				               sqlite3_column_text(stmt, 4));
+		ret = dict_set_dynstr_with_alloc (xdata, keybuf, buf);
+		if (ret) {
+			ret = -EIO;
+			goto out;
+		}
+
+		rows++;
 	}
 
+	if (ret != SQLITE_DONE) {
+		ret = -EIO;
+		goto out;
+	}
+
+	ret = dict_set_uint64 (xdata, "count", rows);
 	ret = 0;
+
 out:
 	if (stmt)
 		sqlite3_finalize(stmt);
 	return ret;
 }
-
-int xdb_wal_checkpoint (xdb_t *xdb, int *pn_log, int *pn_chkpnt)
-{
-	return sqlite3_wal_checkpoint_v2(xdb->conn, NULL,
-					SQLITE_CHECKPOINT_PASSIVE,
-					pn_log, pn_chkpnt);
-}
-#endif
 

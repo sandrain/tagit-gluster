@@ -196,7 +196,10 @@ static inline int xdb_checkpoint_full (xdb_t *xdb, int *pn_log, int *pn_ckpt)
 
 int xdb_get_count (xdb_t *xdb, char *table, uint64_t *count);
 
+/* for debug */
 int xdb_read_all_xfile (xdb_t *xdb, dict_t *xdata);
+int xdb_read_all_xname (xdb_t *xdb, dict_t *xdata);
+int xdb_read_all_xdata (xdb_t *xdb, dict_t *xdata);
 
 #if 0
 /**

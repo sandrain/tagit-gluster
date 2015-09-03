@@ -508,26 +508,23 @@ imess_ipc (call_frame_t *frame, xlator_t *this, int op, dict_t *xdata)
 			goto out;
 		}
 	}
-
-#if 0
-	table = data_to_str (data);
-
-	op_ret = xdb_get_count (xdb, table, &count);
-	if (op_ret) {
-		op_errno = -EIO;
-		goto out;
+	else if (!strcmp(req, "xname")) {
+		op_ret = xdb_read_all_xname (xdb, xdout);
+		if (op_ret) {
+			op_errno = -EIO;
+			goto out;
+		}
 	}
-
-	xdout = dict_new ();
-	if (!xdout) {
-		gf_log (this->name, GF_LOG_ERROR, "dict_new failed ");
-		op_ret = -1;
-		op_errno = -ENOMEM;
-		goto out;
+	else if (!strcmp(req, "xdata")) {
+		op_ret = xdb_read_all_xdata (xdb, xdout);
+		if (op_ret) {
+			op_errno = -EIO;
+			goto out;
+		}
 	}
-
-	dict_set (xdout, "count", data_from_uint64(count));
-#endif
+	else {
+		/* do error handling */
+	}
 
 out:
 	STACK_UNWIND_STRICT (ipc, frame, op_ret, op_errno, xdout);
@@ -538,19 +535,6 @@ out:
 	return 0;
 }
 
-#if 0
-int
-imess_fsyncdir (call_frame_t *frame, xlator_t *this,
-                fd_t *fd, int32_t datasync, dict_t *xdata)
-{
-        STACK_WIND (frame, imess_fsyncdir_cbk,
-                    FIRST_CHILD(this),
-                    FIRST_CHILD(this)->fops->fsyncdir,
-                    fd, datasync, xdata);
-	return 0;
-}
-#endif
-
 /*
  * xlator cbks
  */
@@ -558,36 +542,18 @@ imess_fsyncdir (call_frame_t *frame, xlator_t *this,
 int32_t
 imess_release (xlator_t *this, fd_t *fd)
 {
-#if 0
-	imess_priv_t *priv = NULL;
-
-	priv = this->private;
-#endif
-
         return 0;
 }
 
 int32_t
 imess_releasedir (xlator_t *this, fd_t *fd)
 {
-#if 0
-	imess_priv_t *priv = NULL;
-
-	priv = this->private;
-#endif
-
         return 0;
 }
 
 int32_t
 imess_forget (xlator_t *this, inode_t *inode)
 {
-#if 0
-	imess_priv_t *priv = NULL;
-
-	priv = this->private;
-#endif
-
         return 0;
 }
 

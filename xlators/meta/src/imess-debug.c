@@ -28,6 +28,30 @@ static inline char *get_client_name(inode_t *inode)
 	return dentry->name;
 }
 
+static inline int file_fill_all_records(strfd_t *strfd, dict_t *xdata)
+{
+	int ret = 0;
+	uint64_t i = 0;
+	uint64_t count = 0;
+	char keybuf[8] = { 0, };
+	char *row = NULL;
+
+	ret = dict_get_uint64 (xdata, "count", &count);
+	if (ret)
+		return -1;
+
+	strprintf(strfd, "%llu records:\n", (unsigned long long) count);
+
+	for (i = 0; i < count; i++) {
+		sprintf(keybuf, "%llu", (unsigned long long) i);
+		ret = dict_get_str (xdata, keybuf, &row);
+
+		strprintf(strfd, "[%10llu] %s\n", (unsigned long long) i, row);
+	}
+
+	return strfd->size;
+}
+
 /*
  * xfile
  */
@@ -41,10 +65,6 @@ imess_xfile_fill (xlator_t *this, inode_t *file, strfd_t *strfd)
 	char *client = NULL;
 	dict_t *xdin = NULL;
 	dict_t *xdout = NULL;
-	uint64_t i = 0;
-	uint64_t count = 0;
-	char keybuf[8] = { 0, };
-	char *row = NULL;
 
 	xl = this->children->xlator;
 	client = get_client_name (file);
@@ -57,44 +77,7 @@ imess_xfile_fill (xlator_t *this, inode_t *file, strfd_t *strfd)
 	if (ret)
 		return -1;
 
-	ret = dict_get_uint64 (xdout, "count", &count);
-	if (ret)
-		return -1;
-
-	strprintf(strfd, "%llu records:\n", (unsigned long long) count);
-
-	for (i = 0; i < count; i++) {
-		sprintf(keybuf, "%llu", (unsigned long long) i);
-		ret = dict_get_str (xdout, keybuf, &row);
-
-		strprintf(strfd, "[%10llu] %s\n", (unsigned long long) i, row);
-	}
-
-	return strfd->size;
-#if 0
-	int ret;
-	xlator_t *xl = NULL;
-	int op = 10;
-	dict_t *xdin = NULL;
-	dict_t *xdout = NULL;
-	data_t *data = NULL;
-
-	xl = this->children->xlator;
-
-	xdin = dict_new();
-	dict_set(xdin, "table", str_to_data("xdb_xfile"));
-
-	ret = syncop_ipc (xl, op, xdin, &xdout);
-	if (ret)
-		return 0;
-
-	data = dict_get(xdout, "count");
-
-	strprintf (strfd, "xfile view: (%d) count = %d\n",
-			ret, data_to_int32(data));
-
-	return strfd->size;
-#endif
+	return file_fill_all_records (strfd, xdout);
 }
 
 static int
@@ -128,9 +111,25 @@ meta_imess_xfile_hook (call_frame_t *frame, xlator_t *this, loc_t *loc,
 static int
 imess_xname_fill (xlator_t *this, inode_t *file, strfd_t *strfd)
 {
-	strprintf (strfd, "xname view\n");
+	int ret = 0;
+	int op = 0;
+	xlator_t *xl = NULL;
+	char *client = NULL;
+	dict_t *xdin = NULL;
+	dict_t *xdout = NULL;
 
-	return strfd->size;
+	xl = this->children->xlator;
+	client = get_client_name (file);
+
+	xdin = dict_new ();
+	ret = dict_set_str (xdin, "clients", client);
+	ret = dict_set_str (xdin, "query", "xname");
+
+	ret = syncop_ipc (xl, op, xdin, &xdout);
+	if (ret)
+		return -1;
+
+	return file_fill_all_records (strfd, xdout);
 }
 
 static int
@@ -164,9 +163,25 @@ meta_imess_xname_hook (call_frame_t *frame, xlator_t *this, loc_t *loc,
 static int
 imess_xdata_fill (xlator_t *this, inode_t *file, strfd_t *strfd)
 {
-	strprintf (strfd, "xdata view\n");
+	int ret = 0;
+	int op = 0;
+	xlator_t *xl = NULL;
+	char *client = NULL;
+	dict_t *xdin = NULL;
+	dict_t *xdout = NULL;
 
-	return strfd->size;
+	xl = this->children->xlator;
+	client = get_client_name (file);
+
+	xdin = dict_new ();
+	ret = dict_set_str (xdin, "clients", client);
+	ret = dict_set_str (xdin, "query", "xdata");
+
+	ret = syncop_ipc (xl, op, xdin, &xdout);
+	if (ret)
+		return -1;
+
+	return file_fill_all_records (strfd, xdout);
 }
 
 static int
