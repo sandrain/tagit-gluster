@@ -66,6 +66,12 @@ static struct meta_dirent root_dir_dirents[] = {
 	  .hook = meta_analyzethis_dir_hook,
 	},
 #endif
+#ifdef HAVE_IMESS
+	{ .name = "imess",
+	  .type = IA_IFDIR,
+	  .hook = meta_imess_dir_hook,
+	},
+#endif
 	{ .name = NULL }
 };
 

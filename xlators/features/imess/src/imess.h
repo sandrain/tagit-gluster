@@ -21,10 +21,19 @@
 
 #include "xdb.h"
 
+/* recovery mode */
+enum {
+	IMESS_REC_NONE		= 0,	/* no commit until unmount */
+	IMESS_REC_PESS,			/* pessimistic: commit on each ops */
+	IMESS_REC_FRAC,			/* commit on each XX ops */
+	IMESS_REC_SYNC,			/* commit on each sync ops */
+};
+
 typedef struct {
 	char          *dbpath;
 	xdb_t         *xdb;
-	gf_boolean_t   enable_metacache;
+	int            recovery_mode;
+	gf_boolean_t   lookup_cache;
 } imess_priv_t;
 
 #define IMESS_STACK_UNWIND(op, frame, params ...)                       \

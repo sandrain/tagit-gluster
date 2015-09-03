@@ -7087,3 +7087,158 @@ int32_t dht_migration_needed(xlator_t *this)
 out:
         return ret;
 }
+
+#if 0
+int
+dht_lookup_everywhere (call_frame_t *frame, xlator_t *this, loc_t *loc)
+{
+        dht_conf_t     *conf = NULL;
+        dht_local_t    *local = NULL;
+        int             i = 0;
+        int             call_cnt = 0;
+
+        GF_VALIDATE_OR_GOTO ("dht", frame, err);
+        GF_VALIDATE_OR_GOTO ("dht", this, out);
+        GF_VALIDATE_OR_GOTO ("dht", frame->local, out);
+        GF_VALIDATE_OR_GOTO ("dht", this->private, out);
+        GF_VALIDATE_OR_GOTO ("dht", loc, out);
+
+        conf = this->private;
+        local = frame->local;
+
+        call_cnt = conf->subvolume_cnt;
+        local->call_cnt = call_cnt;
+
+        if (!local->inode)
+                local->inode = inode_ref (loc->inode);
+
+        gf_msg_debug (this->name, 0,
+                      "winding lookup call to %d subvols", call_cnt);
+
+        for (i = 0; i < call_cnt; i++) {
+                STACK_WIND (frame, dht_lookup_everywhere_cbk,
+                            conf->subvolumes[i],
+                            conf->subvolumes[i]->fops->lookup,
+                            loc, local->xattr_req);
+        }
+
+        return 0;
+out:
+        DHT_STACK_UNWIND (lookup, frame, -1, EINVAL, NULL, NULL, NULL, NULL);
+err:
+        return -1;
+}
+#endif
+
+int32_t dht_ipc_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
+		int32_t op_ret, int32_t op_errno, dict_t *xdata)
+{
+        dht_local_t  *local         = NULL;
+        int           this_call_cnt = 0;
+        call_frame_t *prev          = NULL;
+        int           ret           = -1;
+        dht_conf_t   *conf          = NULL;
+	uint64_t      i             = 0;
+        dict_t       *dict_req      = NULL;
+	data_t       *data          = NULL;
+	uint64_t      xcnt          = 0;
+	char          keybuf[8]     = {0};
+
+        GF_VALIDATE_OR_GOTO ("dht", frame, out);
+        GF_VALIDATE_OR_GOTO ("dht", this, out);
+        GF_VALIDATE_OR_GOTO ("dht", frame->local, out);
+        GF_VALIDATE_OR_GOTO ("dht", cookie, out);
+        GF_VALIDATE_OR_GOTO ("dht", this->private, out);
+
+        local  = frame->local;
+        conf   = this->private;
+
+        prev   = cookie;
+
+	dict_req = local->ipc_req;
+
+        LOCK (&frame->lock);
+        {
+		if (op_ret == -1)
+			goto unlock;
+
+		ret = dict_get_uint64 (xdata, "count", &xcnt);
+		if (ret)
+			goto unlock;
+
+		for (i = 0; i < xcnt; i++) {
+			sprintf(keybuf, "%llu", (unsigned long long) i);
+			data = dict_get (xdata, keybuf);
+
+			sprintf(keybuf, "%llu",
+				(unsigned long long) local->ipc_req_pos++);
+			dict_set (dict_req, keybuf, data);
+		}
+	}
+unlock:
+        UNLOCK (&frame->lock);
+
+        this_call_cnt = dht_frame_return (frame);
+        if (is_last_call (this_call_cnt)) {
+		ret = dict_set_uint64 (dict_req, "count", local->ipc_req_pos);
+		if (ret) {
+			/** handle error */
+		}
+                DHT_STACK_UNWIND (ipc, frame, 0, 0, dict_req);
+		dict_unref (dict_req);
+        }
+
+out:
+	return ret;
+}
+
+/**
+ * hs: for the prototype implementation of imess index queries, we assume that
+ * 'clients' xdata contains the list of the clients (comma separated). if it
+ * isn't set, call the default handler.
+ */
+int dht_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata)
+{
+	int             ret = 0;
+	char           *clist_str = NULL;
+        dht_conf_t     *conf = NULL;
+        dht_local_t    *local = NULL;
+	xlator_t       *subvol = NULL;
+        int             i = 0;
+        int             call_cnt = 0;
+
+	if (!xdata)
+		goto call_default;
+
+        GF_VALIDATE_OR_GOTO ("dht", frame, err);
+        GF_VALIDATE_OR_GOTO ("dht", this, out);
+
+        conf = this->private;
+        local = dht_local_init (frame, NULL, NULL, GF_FOP_IPC);
+
+	ret = dict_get_str (xdata, "clients", &clist_str);
+	if (ret)
+		goto call_default;
+
+	for (i = 0; i < conf->subvolume_cnt; i++) {
+		subvol = conf->subvolumes[i];
+		if (gf_strstr(clist_str, ",", subvol->name))
+			continue;
+
+		STACK_WIND (frame, dht_ipc_cbk, subvol, subvol->fops->ipc,
+			    op, xdata);
+		call_cnt++;
+	}
+
+	local->call_cnt = call_cnt;
+	local->ipc_req = dict_new ();
+
+	return 0;
+
+call_default:
+	return default_ipc (frame, this, op, xdata);
+out:
+	DHT_STACK_UNWIND (ipc, frame, -1, EINVAL, NULL);
+err:
+	return -1;
+}

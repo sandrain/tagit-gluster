@@ -94,6 +94,61 @@ out:
 	return 0;
 }
 
+int
+imess_unlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
+                  int32_t op_ret, int32_t op_errno,
+                  struct iatt *preparent, struct iatt *postparent,
+                  dict_t *xdata)
+{
+	int ret = 0;
+	imess_priv_t *priv = NULL;
+	xdb_file_t file = { 0, };
+
+	priv = this->private;
+	file.gfid = cookie;
+
+	if (op_errno)
+		goto out;
+
+	ret = xdb_remove_file(priv->xdb, &file);
+	if (ret)
+		gf_log(this->name, GF_LOG_WARNING, "imess_unlink_cbk: "
+				"xdb_remove_file failed");
+
+out:
+	GF_FREE(cookie);
+        IMESS_STACK_UNWIND (unlink, frame, op_ret, op_errno,
+                            preparent, postparent, xdata);
+	return 0;
+}
+
+int
+imess_rmdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
+                 int32_t op_ret, int32_t op_errno,
+                 struct iatt *preparent, struct iatt *postparent,
+		 dict_t *xdata)
+{
+	int ret = 0;
+	imess_priv_t *priv = NULL;
+	xdb_file_t file = { 0, };
+
+	priv = this->private;
+	file.gfid = cookie;
+
+	if (op_errno)
+		goto out;
+
+	ret = xdb_remove_file(priv->xdb, &file);
+	if (ret)
+		gf_log(this->name, GF_LOG_WARNING, "imess_rmdir_cbk: "
+				"xdb_remove_file failed");
+
+out:
+	GF_FREE(cookie);
+        IMESS_STACK_UNWIND (rmdir, frame, op_ret, op_errno,
+                            preparent, postparent, xdata);
+	return 0;
+}
 
 int
 imess_create_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
@@ -123,9 +178,11 @@ out:
 }
 
 int
-imess_writev_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
-                  int32_t op_ret, int32_t op_errno,
-                  struct iatt *prebuf, struct iatt *postbuf, dict_t *xdata)
+imess_symlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
+                   int32_t op_ret, int32_t op_errno,
+                   inode_t *inode, struct iatt *buf,
+                   struct iatt *preparent, struct iatt *postparent,
+                   dict_t *xdata)
 {
 	int ret = 0;
 	imess_priv_t *priv = NULL;
@@ -135,11 +192,42 @@ imess_writev_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	if (op_errno)
 		goto out;
 
-#if 0
-	ret = put_stat_attr(priv, postbuf, NULL);
+	ret = put_stat_attr(priv, buf, (const char *) cookie);
 	if (ret)
-		gf_log(this->name, GF_LOG_ERROR, "imess_writev_cbk: "
+		gf_log(this->name, GF_LOG_ERROR, "imess_symlink_cbk: "
 				"xdb_insert_stat failed");
+
+out:
+	GF_FREE(cookie);
+        IMESS_STACK_UNWIND (symlink, frame, op_ret, op_errno, inode, buf,
+                            preparent, postparent, xdata);
+	return 0;
+}
+
+int
+imess_writev_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
+                  int32_t op_ret, int32_t op_errno,
+                  struct iatt *prebuf, struct iatt *postbuf, dict_t *xdata)
+{
+	imess_priv_t *priv = NULL;
+
+	priv = this->private;
+
+	if (op_errno)
+		goto out;
+
+#if 0
+	if (prebuf->ia_mtime == postbuf->ia_mtime
+	    && prebuf->ia_size == postbuf->ia_size)
+		goto out;
+
+	iatt_to_stat(postbuf, &sb);
+	file.gfid = (const char *) cookie;
+
+	ret = xdb_insert_stat(priv->xdb, &file, &sb);
+	if (ret)
+		gf_log(this->name, GF_LOG_WARNING, "imess_writev_cbk: "
+				"xdb_update_stat failed");
 #endif
 
 out:
@@ -148,6 +236,7 @@ out:
         return 0;
 }
 
+#if 0
 int
 imess_lookup_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
                   int32_t op_ret, int32_t op_errno,
@@ -158,11 +247,78 @@ imess_lookup_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
                             xdata, postparent);
 	return 0;
 }
+#endif
+
+int
+imess_fsync_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
+                 int32_t op_ret, int32_t op_errno,
+                 struct iatt *prebuf, struct iatt *postbuf, dict_t *xdata)
+{
+	int ret = 0;
+	imess_priv_t *priv = NULL;
+	xdb_t *xdb = NULL;
+	int datasync = 0;
+
+	priv = this->private;
+	xdb = priv->xdb;
+	datasync = *((int32_t *) cookie);
+
+	if (datasync)
+		goto out;
+
+	if (priv->recovery_mode == IMESS_REC_SYNC) {
+		int pn_log = 0, pn_ckpt = 0;
+
+		xdb_tx_commit(priv->xdb);
+
+		ret = xdb_checkpoint_fast(xdb, &pn_log, &pn_ckpt);
+
+		gf_log (this->name, GF_LOG_WARNING,
+			"checkpoint: (status=%s), pn_log=%d, pn_ckpt=%d",
+			xdb->err, pn_log, pn_ckpt);
+
+		xdb_tx_begin(priv->xdb);
+	}
+
+out:
+	FREE(cookie);
+        IMESS_STACK_UNWIND (fsync, frame, op_ret, op_errno, prebuf, postbuf,
+                            xdata);
+        return ret;
+}
+
+#if 0
+int
+imess_fsyncdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
+                    int32_t op_ret, int32_t op_errno, dict_t *xdata)
+{
+	int ret = 0;
+	imess_priv_t *priv = NULL;
+	xdb_t *xdb = NULL;
+
+	priv = this->private;
+	xdb = priv->xdb;
+
+	if (priv->recovery_mode == IMESS_REC_SYNC) {
+		ret = xdb_tx_commit(priv->xdb);
+		ret |= xdb_tx_begin(priv->xdb);
+		if (ret) {
+			gf_log (this->name, GF_LOG_ERROR,
+				"imess_fsyncdir_cbk: %s",
+				xdb->err);
+		}
+	}
+
+        IMESS_STACK_UNWIND (fsyncdir, frame, op_ret, op_errno, xdata);
+        return ret;
+}
+#endif
 
 /*
  * xlator file operations.
  */
 
+#if 0
 int32_t
 imess_lookup (call_frame_t *frame, xlator_t *this, loc_t *loc, dict_t *xdata)
 {
@@ -171,10 +327,6 @@ imess_lookup (call_frame_t *frame, xlator_t *this, loc_t *loc, dict_t *xdata)
 	xdb_t *xdb = NULL;
 
 	priv = this->private;
-
-#if 0
-	gf_log (this->name, GF_LOG_INFO, "imess lookup: %s", loc->path);
-#endif
 
 	if (strcmp(loc->path, "/imessmeasure"))
 		goto pass;
@@ -207,6 +359,7 @@ pass:
 
         return 0;
 }
+#endif
 
 int
 imess_stat (call_frame_t *frame, xlator_t *this, loc_t *loc, dict_t *xdata)
@@ -215,7 +368,7 @@ imess_stat (call_frame_t *frame, xlator_t *this, loc_t *loc, dict_t *xdata)
 
 	priv = this->private;
 
-	if (!priv->enable_metacache)
+	if (!priv->lookup_cache)
 		goto call_child;
 
 	/* TODO: implement the cache logic (key: loc->inode->gfid) */
@@ -232,9 +385,7 @@ imess_mkdir (call_frame_t *frame, xlator_t *this, loc_t *loc, mode_t mode,
              mode_t umask, dict_t *xdata)
 {
 	void *cookie = NULL;
-	imess_priv_t *priv = NULL;
 
-	priv = this->private;
 	cookie = gf_strdup(loc->path);
 
 	STACK_WIND_COOKIE (frame, imess_mkdir_cbk, cookie,
@@ -244,14 +395,42 @@ imess_mkdir (call_frame_t *frame, xlator_t *this, loc_t *loc, mode_t mode,
 }
 
 int
+imess_unlink (call_frame_t *frame, xlator_t *this, loc_t *loc, int xflag,
+              dict_t *xdata)
+{
+	void *cookie = NULL;
+
+	cookie = uuid_utoa(loc->gfid);
+
+        STACK_WIND_COOKIE (frame, imess_unlink_cbk, cookie,
+                           FIRST_CHILD(this),
+                           FIRST_CHILD(this)->fops->unlink,
+                           loc, xflag, xdata);
+        return 0;
+}
+
+int
+imess_rmdir (call_frame_t *frame, xlator_t *this, loc_t *loc, int flags,
+             dict_t *xdata)
+{
+	void *cookie = NULL;
+
+	cookie = uuid_utoa(loc->gfid);
+
+        STACK_WIND_COOKIE (frame, imess_rmdir_cbk, cookie,
+                           FIRST_CHILD(this),
+                           FIRST_CHILD(this)->fops->rmdir,
+                           loc, flags, xdata);
+        return 0;
+}
+
+int
 imess_create (call_frame_t *frame, xlator_t *this, loc_t *loc,
               int32_t flags, mode_t mode, mode_t umask, fd_t *fd,
               dict_t *xdata)
 {
 	void *cookie = NULL;
-	imess_priv_t *priv = NULL;
 
-	priv = this->private;
 	cookie = gf_strdup(loc->path);
 
         STACK_WIND_COOKIE (frame, imess_create_cbk, cookie,
@@ -261,20 +440,116 @@ imess_create (call_frame_t *frame, xlator_t *this, loc_t *loc,
 }
 
 int
+imess_symlink (call_frame_t *frame, xlator_t *this, const char *linkpath,
+               loc_t *loc, mode_t umask, dict_t *xdata)
+{
+	void *cookie = NULL;
+
+	cookie = gf_strdup(loc->path);
+
+        STACK_WIND_COOKIE (frame, imess_symlink_cbk, cookie,
+			   FIRST_CHILD(this), FIRST_CHILD(this)->fops->symlink,
+			   linkpath, loc, umask, xdata);
+        return 0;
+}
+
+
+int
 imess_writev (call_frame_t *frame, xlator_t *this, fd_t *fd,
               struct iovec *vector, int32_t count, off_t offset,
 	      uint32_t flags, struct iobref *iobref, dict_t *xdata)
 {
-	imess_priv_t *priv = NULL;
+	void *cookie = NULL;
 
-	priv = this->private;
+	cookie = uuid_utoa(fd->inode->gfid);
 
-        STACK_WIND (frame, imess_writev_cbk,
-                    FIRST_CHILD(this),
-                    FIRST_CHILD(this)->fops->writev,
-                    fd, vector, count, offset, flags, iobref, xdata);
+        STACK_WIND_COOKIE (frame, imess_writev_cbk, cookie,
+                           FIRST_CHILD(this),
+                           FIRST_CHILD(this)->fops->writev,
+                           fd, vector, count, offset, flags, iobref, xdata);
 	return 0;
 }
+
+int
+imess_fsync (call_frame_t *frame, xlator_t *this, fd_t *fd, int32_t datasync,
+             dict_t *xdata)
+{
+	int *cookie = MALLOC(sizeof(datasync));
+
+	*cookie = datasync;
+
+        STACK_WIND_COOKIE (frame, imess_fsync_cbk, (void *) cookie,
+                           FIRST_CHILD(this),
+                           FIRST_CHILD(this)->fops->fsync,
+                           fd, datasync, xdata);
+	return 0;
+}
+
+int
+imess_ipc (call_frame_t *frame, xlator_t *this, int op, dict_t *xdata)
+{
+	int op_ret = 0;
+	int op_errno = 0;
+	dict_t *xdout = NULL;
+	imess_priv_t *priv = NULL;
+	xdb_t *xdb = NULL;
+	char *req = NULL;
+
+	priv = this->private;
+	xdb = priv->xdb;
+
+	op_ret = dict_get_str (xdata, "query", &req);
+	xdout = dict_new ();
+
+	if (!strcmp(req, "xfile")) {
+		op_ret = xdb_read_all_xfile (xdb, xdout);
+		if (op_ret) {
+			op_errno = -EIO;
+			goto out;
+		}
+	}
+
+#if 0
+	table = data_to_str (data);
+
+	op_ret = xdb_get_count (xdb, table, &count);
+	if (op_ret) {
+		op_errno = -EIO;
+		goto out;
+	}
+
+	xdout = dict_new ();
+	if (!xdout) {
+		gf_log (this->name, GF_LOG_ERROR, "dict_new failed ");
+		op_ret = -1;
+		op_errno = -ENOMEM;
+		goto out;
+	}
+
+	dict_set (xdout, "count", data_from_uint64(count));
+#endif
+
+out:
+	STACK_UNWIND_STRICT (ipc, frame, op_ret, op_errno, xdout);
+
+	if (xdout)
+		dict_unref (xdout);
+
+	return 0;
+}
+
+#if 0
+int
+imess_fsyncdir (call_frame_t *frame, xlator_t *this,
+                fd_t *fd, int32_t datasync, dict_t *xdata)
+{
+        STACK_WIND (frame, imess_fsyncdir_cbk,
+                    FIRST_CHILD(this),
+                    FIRST_CHILD(this)->fops->fsyncdir,
+                    fd, datasync, xdata);
+	return 0;
+}
+#endif
 
 /*
  * xlator cbks
@@ -283,9 +558,11 @@ imess_writev (call_frame_t *frame, xlator_t *this, fd_t *fd,
 int32_t
 imess_release (xlator_t *this, fd_t *fd)
 {
+#if 0
 	imess_priv_t *priv = NULL;
 
 	priv = this->private;
+#endif
 
         return 0;
 }
@@ -293,9 +570,11 @@ imess_release (xlator_t *this, fd_t *fd)
 int32_t
 imess_releasedir (xlator_t *this, fd_t *fd)
 {
+#if 0
 	imess_priv_t *priv = NULL;
 
 	priv = this->private;
+#endif
 
         return 0;
 }
@@ -303,9 +582,11 @@ imess_releasedir (xlator_t *this, fd_t *fd)
 int32_t
 imess_forget (xlator_t *this, inode_t *inode)
 {
+#if 0
 	imess_priv_t *priv = NULL;
 
 	priv = this->private;
+#endif
 
         return 0;
 }
@@ -332,6 +613,7 @@ init (xlator_t *this)
 {
 	int ret = -1;
 	dict_t *options = NULL;
+	//char *recovery_mode = NULL;
 	imess_priv_t *priv = NULL;
 
 	GF_VALIDATE_OR_GOTO ("imess", this, out);
@@ -354,7 +636,10 @@ init (xlator_t *this)
 	options = this->options;
 
 	GF_OPTION_INIT ("db-path", priv->dbpath, str, out);
-	GF_OPTION_INIT ("enable-metacache", priv->enable_metacache, bool, out);
+	//GF_OPTION_INIT ("recovery-mode", recovery_mode, str, out);
+	GF_OPTION_INIT ("enable-lookup-cache", priv->lookup_cache, bool, out);
+
+	priv->recovery_mode = IMESS_REC_SYNC;
 
 	ret = xdb_init (&priv->xdb, priv->dbpath);
 	if (ret) {
@@ -363,9 +648,11 @@ init (xlator_t *this)
 		goto out;
 	}
 
+	xdb_tx_begin (priv->xdb);
+
 	gf_log (this->name, GF_LOG_TRACE, "imess initialized. "
-		"(database path: %s, metadata cache: %d)",
-		priv->dbpath, priv->enable_metacache);
+		"(database path: %s, lookup cache: %d)",
+		priv->dbpath, priv->lookup_cache);
 
 out:
 	if (ret < 0) {
@@ -385,6 +672,10 @@ fini (xlator_t *this)
 
 	priv = this->private;
 
+	xdb_tx_commit (priv->xdb);
+
+	xdb_exit (priv->xdb);
+
 	GF_FREE (priv);
 
 	return;
@@ -397,25 +688,28 @@ struct xlator_cbks cbks = {
 };
 
 struct xlator_fops fops = {
-	.lookup      = imess_lookup,
         .stat        = imess_stat,
         .mkdir       = imess_mkdir,
+        .unlink      = imess_unlink,
+        .rmdir       = imess_rmdir,
         .create      = imess_create,
+        .symlink     = imess_symlink,
         .writev      = imess_writev,
+        .fsync       = imess_fsync,
+	.ipc         = imess_ipc,
 #if 0
+	.lookup      = imess_lookup,
+        .fsyncdir    = imess_fsyncdir,
         .readlink    = imess_readlink,
         .mknod       = imess_mknod,
         .unlink      = imess_unlink,
         .rmdir       = imess_rmdir,
-        .symlink     = imess_symlink,
         .rename      = imess_rename,
         .link        = imess_link,
         .truncate    = imess_truncate,
         .open        = imess_open,
         .readv       = imess_readv,
         .statfs      = imess_statfs,
-        .flush       = imess_flush,
-        .fsync       = imess_fsync,
         .setxattr    = imess_setxattr,
         .getxattr    = imess_getxattr,
         .fsetxattr   = imess_fsetxattr,
@@ -424,7 +718,6 @@ struct xlator_fops fops = {
         .opendir     = imess_opendir,
         .readdir     = imess_readdir,
         .readdirp    = imess_readdirp,
-        .fsyncdir    = imess_fsyncdir,
         .access      = imess_access,
         .ftruncate   = imess_ftruncate,
         .fstat       = imess_fstat,
@@ -433,7 +726,6 @@ struct xlator_fops fops = {
         .finodelk    = imess_finodelk,
         .entrylk     = imess_entrylk,
         .fentrylk    = imess_fentrylk,
-        .lookup      = imess_lookup,
         .rchecksum   = imess_rchecksum,
         .xattrop     = imess_xattrop,
         .fxattrop    = imess_fxattrop,
@@ -446,9 +738,14 @@ struct volume_options options [] = {
 	{ .key = { "db-path" },
 	  .type = GF_OPTION_TYPE_PATH,
 	},
-	{ .key = { "enable-metacache" },
+	{ .key = { "enable-lookup-cache" },
 	  .type = GF_OPTION_TYPE_BOOL,
 	},
+#if 0
+	{ .key = { "recovery-mode" },
+          .type = GF_OPTION_TYPE_STR,
+	},
+#endif
 	{ .key = { NULL } },
 };
 

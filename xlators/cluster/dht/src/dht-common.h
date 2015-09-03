@@ -231,6 +231,10 @@ struct dht_local {
 
         char   *newpath;
 
+	/* hs: imess ipc related */
+	dict_t    *ipc_req;
+	uint64_t   ipc_req_pos;
+
         /* gfid related */
         uuid_t  gfid;
 
@@ -911,6 +915,7 @@ int32_t dht_discard(call_frame_t *frame, xlator_t *this, fd_t *fd,
 		    off_t offset, size_t len, dict_t *xdata);
 int32_t dht_zerofill(call_frame_t *frame, xlator_t *this, fd_t *fd,
                     off_t offset, off_t len, dict_t *xdata);
+int dht_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata);
 
 int
 dht_set_subvol_range(xlator_t *this);
@@ -945,6 +950,9 @@ int dht_newfile_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
                      int op_ret, int op_errno,
                      inode_t *inode, struct iatt *stbuf, struct iatt *preparent,
                      struct iatt *postparent, dict_t *xdata);
+
+int32_t dht_ipc_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
+		int32_t op_ret, int32_t op_errno, dict_t *xdata);
 
 int
 gf_defrag_status_get (gf_defrag_info_t *defrag, dict_t *dict);

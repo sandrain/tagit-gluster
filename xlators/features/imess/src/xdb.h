@@ -49,8 +49,6 @@ struct _xdb_attr {
 	const char *name;	/* attribute name, for stat(2) attr, use
 				   IMESS_XDB_ANAME_xx */
 	int         type;	/* IMESS_XDB_TYPE_xx */
-	uint32_t    bytes;	/* raw data size */
-	char       *blob;	/* raw data */
 	uint64_t    ival;	/* integer parsed */
 	const char *sval;	/* string parsed */
 };
@@ -62,6 +60,29 @@ struct _xdb_search_cond {
 };
 
 typedef struct _xdb_search_cond xdb_search_cond_t;
+
+
+static inline int xdb_exec_simple_sql(xdb_t *self, const char *sql)
+{
+	int ret = sqlite3_exec (self->conn, sql, NULL, NULL, NULL);
+	return ret == SQLITE_OK ? 0 : ret;
+}
+
+static inline int xdb_tx_begin(xdb_t *self)
+{
+	return xdb_exec_simple_sql(self, "BEGIN TRANSACTION");
+}
+
+static inline int xdb_tx_commit(xdb_t *self)
+{
+	return xdb_exec_simple_sql(self, "END TRANSACTION");
+}
+
+static inline int xdb_tx_abort(xdb_t *self)
+{
+	return xdb_exec_simple_sql(self, "ROLLBACK");
+}
+
 
 /**
  * xdb_init: initialize the xdb instance. if the db file doesn't exists, this
@@ -89,6 +110,96 @@ int xdb_init (/* out */ xdb_t **xdb, const char *path);
 int xdb_exit (xdb_t *xdb);
 
 /**
+ * 
+ *
+ * @xdb
+ * @file
+ *
+ * 
+ */
+int xdb_insert_file (xdb_t *xdb, xdb_file_t *file);
+
+/**
+ * 
+ *
+ * @xdb
+ * @file
+ *
+ * 
+ */
+int xdb_remove_file (xdb_t *xdb, xdb_file_t *file);
+
+/**
+ * 
+ *
+ * @xdb
+ * @file
+ * @stat
+ *
+ * 
+ */
+int xdb_insert_stat (xdb_t *xdb, xdb_file_t *file, struct stat *stat);
+
+/**
+ * 
+ *
+ * @xdb
+ * @file
+ * @attr
+ * @n_attr
+ *
+ * 
+ */
+int xdb_insert_xattr (xdb_t *xdb, xdb_file_t *file, xdb_attr_t *attr,
+			uint64_t n_attr);
+
+/**
+ * 
+ *
+ * @xdb
+ * @file
+ * @name
+ *
+ * 
+ */
+int xdb_remove_xattr (xdb_t *xdb, xdb_file_t *file, const char *name);
+
+static inline
+int xdb_checkpoint (xdb_t *xdb, int mode, int *pn_log, int *pn_ckpt)
+{
+	int ret = 0;
+
+	if (!xdb || !xdb->conn || !pn_log || !pn_ckpt)
+		return -EINVAL;
+
+	ret = sqlite3_wal_checkpoint_v2 (xdb->conn, NULL, mode,
+					pn_log, pn_ckpt);
+	if (ret != SQLITE_OK)
+		xdb->err = sqlite3_errmsg(xdb->conn);
+	else
+		ret = -EIO;
+
+	return ret;
+}
+
+static inline int xdb_checkpoint_fast (xdb_t *xdb, int *pn_log, int *pn_ckpt)
+{
+	return xdb_checkpoint (xdb, SQLITE_CHECKPOINT_PASSIVE,
+				pn_log, pn_ckpt);
+}
+
+static inline int xdb_checkpoint_full (xdb_t *xdb, int *pn_log, int *pn_ckpt)
+{
+	return xdb_checkpoint (xdb, SQLITE_CHECKPOINT_RESTART,
+				pn_log, pn_ckpt);
+}
+
+int xdb_get_count (xdb_t *xdb, char *table, uint64_t *count);
+
+int xdb_read_all_xfile (xdb_t *xdb, dict_t *xdata);
+
+#if 0
+/**
  * xdb_insert_record: populate attributes in xdb. if the @attr is empty, this
  * will only populate the file record.
  *
@@ -108,6 +219,8 @@ static inline int xdb_insert_file (xdb_t *xdb, xdb_file_t *file)
 {
 	return xdb_insert_record(xdb, file, NULL, 0);
 }
+
+int xdb_remove_file (xdb_t *xdb, xdb_file_t *file);
 
 /**
  * xdb_insert_stat: populate the @stat attributes.
@@ -137,7 +250,36 @@ int xdb_query_files (xdb_t *xdb, xdb_search_cond_t *cond,
 			/* out */ xdb_file_t **files,
 			/* out */ uint64_t n_files);
 
+/**
+ *
+ *
+ * @xdb
+ *
+ * 
+ */
+static inline int xdb_tx_begin (xdb_t *xdb)
+{
+	tx_begin(xdb);
+	return 0;
+}
+
+/**
+ * Commit current changes made in the index database. 
+ *
+ * @xdb
+ *
+ * 
+ */
+static inline int xdb_tx_commit (xdb_t *xdb)
+{
+	tx_commit(xdb);
+	return 0;
+}
+
+int xdb_wal_checkpoint (xdb_t *xdb, int *pn_log, int *pn_chkpnt);
+
 int xdb_measure (xdb_t *xdb, const char *query);
+#endif
 
 #endif	/* _IMESS_XDB_H_ */
 

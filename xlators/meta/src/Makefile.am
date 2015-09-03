@@ -39,6 +39,14 @@ meta_la_SOURCES += analyzethis-submit.c \
 		   analyzethis.c
 endif
 
+if ENABLE_IMESS
+meta_la_SOURCES += imess.c \
+		   imess-views.c \
+		   imess-tags.c \
+		   imess-create-view.c \
+		   imess-debug.c
+endif
+
 meta_la_LIBADD = $(top_builddir)/libglusterfs/src/libglusterfs.la
 
 noinst_HEADERS = meta.h meta-hooks.h meta-mem-types.h

@@ -79,6 +79,9 @@ struct xlator_fops fops = {
 	.fallocate   = dht_fallocate,
 	.discard     = dht_discard,
         .zerofill    = dht_zerofill,
+
+	/* ipc */
+	.ipc         = dht_ipc,
 };
 
 struct xlator_dumpops dumpops = {

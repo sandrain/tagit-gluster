@@ -48,5 +48,16 @@ DECLARE_HOOK(analyzethis_submit);
 DECLARE_HOOK(analyzethis_jobs);
 DECLARE_HOOK(analyzethis_self);
 #endif
+#ifdef HAVE_IMESS
+DECLARE_HOOK(imess_dir);
+DECLARE_HOOK(imess_views_dir);
+DECLARE_HOOK(imess_tags_dir);
+DECLARE_HOOK(imess_create_view);
+DECLARE_HOOK(imess_debug_dir);
+DECLARE_HOOK(imess_index_dir);
+DECLARE_HOOK(imess_xfile);
+DECLARE_HOOK(imess_xname);
+DECLARE_HOOK(imess_xdata);
+#endif
 
 #endif
