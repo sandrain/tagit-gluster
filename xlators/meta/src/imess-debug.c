@@ -49,8 +49,6 @@ static inline int file_fill_all_records(strfd_t *strfd, dict_t *xdata)
 		strprintf(strfd, "[%7llu] %s\n", (unsigned long long) i, row);
 	}
 
-	dict_unref (xdata);
-
 	return strfd->size;
 }
 
@@ -81,8 +79,6 @@ imess_xfile_fill (xlator_t *this, inode_t *file, strfd_t *strfd)
 
 	ret = file_fill_all_records (strfd, xdout);
 out:
-	if (xdout)
-		dict_unref (xdout);
 	if (xdin)
 		dict_unref (xdin);
 
@@ -140,8 +136,6 @@ imess_xname_fill (xlator_t *this, inode_t *file, strfd_t *strfd)
 
 	ret = file_fill_all_records (strfd, xdout);
 out:
-	if (xdout)
-		dict_unref (xdout);
 	if (xdin)
 		dict_unref (xdin);
 
@@ -199,8 +193,6 @@ imess_xdata_fill (xlator_t *this, inode_t *file, strfd_t *strfd)
 
 	ret = file_fill_all_records (strfd, xdout);
 out:
-	if (xdout)
-		dict_unref (xdout);
 	if (xdin)
 		dict_unref (xdin);
 
@@ -391,8 +383,6 @@ imess_sql_result_fill (xlator_t *this, inode_t *file, strfd_t *strfd)
 
 	ret = file_fill_all_records (strfd, xdout);
 out:
-	if (xdout)
-		dict_unref (xdout);
 	if (xdin)
 		dict_unref (xdin);
 

@@ -7246,8 +7246,6 @@ int dht_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata)
 			    op, xdata);
 	}
 
-	dict_unref (xdata);
-
 	return 0;
 
 call_default:

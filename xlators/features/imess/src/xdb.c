@@ -644,8 +644,6 @@ int xdb_read_all_xfile (xdb_t *xdb, dict_t *xdata)
 	ret = 0;
 
 out:
-	dict_unref (xdata);
-
 	if (stmt)
 		sqlite3_finalize(stmt);
 	return ret;
@@ -692,8 +690,6 @@ int xdb_read_all_xname (xdb_t *xdb, dict_t *xdata)
 	ret = 0;
 
 out:
-	dict_unref (xdata);
-
 	if (stmt)
 		sqlite3_finalize(stmt);
 	return ret;
@@ -743,8 +739,6 @@ int xdb_read_all_xdata (xdb_t *xdb, dict_t *xdata)
 	ret = 0;
 
 out:
-	dict_unref (xdata);
-
 	if (stmt)
 		sqlite3_finalize(stmt);
 	return ret;
@@ -770,7 +764,6 @@ int direct_query_callback (void *cdata, int argc, char **argv, char **colname)
 	}
 
 	ret = dict_set_dynstr_with_alloc (xdata, keybuf, buf);
-	dict_unref (xdata);
 
 	if (ret)
 		return ret;
@@ -797,7 +790,6 @@ int xdb_direct_query (xdb_t *xdb, char *sql, dict_t *xdata)
 		return -EIO;
 
 	ret = dict_set_uint64 (xdata, "count", cdata.rows);
-	dict_unref (xdata);
 
 	return 0;
 }
