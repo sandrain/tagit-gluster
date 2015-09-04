@@ -45,6 +45,23 @@ enum {
 	N_XDB_TYPES
 };
 
+enum {
+	XDB_ST_DEV	= 1,
+	XDB_ST_INO,
+	XDB_ST_MODE,
+	XDB_ST_NLINK,
+	XDB_ST_UID,
+	XDB_ST_GID,
+	XDB_ST_RDEV,
+	XDB_ST_SIZE,
+	XDB_ST_BLKSIZE,
+	XDB_ST_BLOCKS,
+	XDB_ST_ATIME,
+	XDB_ST_MTIME,
+	XDB_ST_CTIME,
+};
+
+
 struct _xdb_attr {
 	const char *name;	/* attribute name, for stat(2) attr, use
 				   IMESS_XDB_ANAME_xx */
@@ -163,6 +180,18 @@ int xdb_insert_xattr (xdb_t *xdb, xdb_file_t *file, xdb_attr_t *attr,
  * 
  */
 int xdb_remove_xattr (xdb_t *xdb, xdb_file_t *file, const char *name);
+
+/**
+ *
+ *
+ * @xdb
+ * @file
+ * @sb
+ * @att
+ *
+ * 
+ */
+int xdb_update_stat (xdb_t *xdb, xdb_file_t *file, struct stat *sb, int att);
 
 static inline
 int xdb_checkpoint (xdb_t *xdb, int mode, int *pn_log, int *pn_ckpt)

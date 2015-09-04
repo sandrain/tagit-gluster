@@ -28,6 +28,8 @@ static inline char *get_client_name(inode_t *inode)
 	return dentry->name;
 }
 
+#define _llu(x)	((unsigned long long) (x))
+
 static inline int file_fill_all_records(strfd_t *strfd, dict_t *xdata)
 {
 	int ret = 0;
@@ -40,14 +42,14 @@ static inline int file_fill_all_records(strfd_t *strfd, dict_t *xdata)
 	if (ret)
 		return -1;
 
-	strprintf(strfd, "%llu records:\n", (unsigned long long) count);
-
 	for (i = 0; i < count; i++) {
-		sprintf(keybuf, "%llu", (unsigned long long) i);
+		sprintf(keybuf, "%llu", _llu(i));
 		ret = dict_get_str (xdata, keybuf, &row);
 
-		strprintf(strfd, "[%7llu] %s\n", (unsigned long long) i, row);
+		strprintf(strfd, "[%7llu] %s\n", _llu(i+1), row);
 	}
+
+	strprintf(strfd, "\n%llu records\n", _llu(count));
 
 	return strfd->size;
 }

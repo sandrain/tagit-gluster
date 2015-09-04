@@ -209,28 +209,48 @@ imess_writev_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
                   int32_t op_ret, int32_t op_errno,
                   struct iatt *prebuf, struct iatt *postbuf, dict_t *xdata)
 {
+	int ret = 0;
 	imess_priv_t *priv = NULL;
+	xdb_t *xdb = NULL;
+	xdb_file_t file = {0,};
+	struct stat sb = {0,};
 
 	priv = this->private;
+	xdb = priv->xdb;
 
 	if (op_errno)
-		goto out;
-
-#if 0
-	if (prebuf->ia_mtime == postbuf->ia_mtime
-	    && prebuf->ia_size == postbuf->ia_size)
 		goto out;
 
 	iatt_to_stat(postbuf, &sb);
 	file.gfid = (const char *) cookie;
 
-	ret = xdb_insert_stat(priv->xdb, &file, &sb);
-	if (ret)
-		gf_log(this->name, GF_LOG_WARNING, "imess_writev_cbk: "
-				"xdb_update_stat failed");
-#endif
+	/* mtime */
+	if (prebuf->ia_mtime != postbuf->ia_mtime) {
+		ret = xdb_update_stat(xdb, &file, &sb, XDB_ST_MTIME);
+		if (ret)
+			goto out;
+	}
+
+	/* size */
+	if (prebuf->ia_size != postbuf->ia_size) {
+		ret = xdb_update_stat(xdb, &file, &sb, XDB_ST_SIZE);
+		if (ret)
+			goto out;
+	}
+
+	/* blocks */
+	if (prebuf->ia_blocks != postbuf->ia_blocks) {
+		ret = xdb_update_stat(xdb, &file, &sb, XDB_ST_BLOCKS);
+		if (ret)
+			goto out;
+	}
 
 out:
+	if (ret) {
+		gf_log(this->name, GF_LOG_WARNING,
+			"imess_writev_cbk: %s", xdb->err);
+	}
+
         IMESS_STACK_UNWIND (writev, frame, op_ret, op_errno, prebuf, postbuf,
                             xdata);
         return 0;

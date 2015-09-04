@@ -34,17 +34,18 @@ typedef struct xdb_callback_data xdb_callback_data_t;
 
 /* pre-compiled queries */
 enum {
-	INSERT_FILE = 0,
-	REMOVE_FILE,
-	INSERT_XNAME,
-	INSERT_XDATA,
-	INSERT_STAT,
-	REMOVE_XDATA,
-	GET_FID,
-	GET_COUNT_XFILE,
-	GET_ALL_XFILE,
-	GET_ALL_XNAME,
-	GET_ALL_XDATA,
+	INSERT_FILE = 0,	/* [0] */
+	REMOVE_FILE,		/* [1] */
+	INSERT_XNAME,		/* [2] */
+	INSERT_XDATA,		/* [3] */
+	REMOVE_XDATA,		/* [4] */
+	INSERT_STAT,		/* [5] */
+	UPDATE_STAT,		/* [6] */
+	GET_FID,		/* [7] */
+	GET_COUNT_XFILE,	/* [8] */
+	GET_ALL_XFILE,		/* [9] */
+	GET_ALL_XNAME,		/* [10] */
+	GET_ALL_XDATA,		/* [11] */
 
 	XDB_N_SQLS,
 };
@@ -55,17 +56,21 @@ enum {
 	} while (0);
 
 static const char *xdb_sqls[XDB_N_SQLS] = {
-/* INSERT_FILE (gfid, path, path, pos) */
+/* [0] INSERT_FILE (gfid, path, path, pos) */
 	"insert into xdb_xfile (gfid, path, name) values (?,?,substr(?,?))\n",
-/* REMOVE_FILE (gfid) */
+/* [1] REMOVE_FILE (gfid) */
 	"delete from xdb_xfile where gfid=?\n",
-/* INSERT_XNAME (name) */
+/* [2] INSERT_XNAME (name) */
 	"insert or ignore into xdb_xname (name) values (?)\n",
-/* INSERT_XDATA (gfid, name, ival, sval) */
+/* [3] INSERT_XDATA (gfid, name, ival, sval) */
 	"insert or replace into xdb_xdata (fid, nid, ival, sval) values\n"
 	"((select fid from xdb_xfile where gfid=?),\n"
 	"(select nid from xdb_xname where name=?),?,?)\n",
-/* INSERT_STAT */
+/* [4] REMOVE_XDATA (gfid, name) */
+	"delete from xdb_xdata where\n"
+	"fid=(select fid from xdb_xfile where gfid=?) and\n"
+	"nid=(select nid from xdb_xname where name=?)\n",
+/* [5] INSERT_STAT */
 	"insert into xdb_xdata (fid, nid, ival, sval)\n"
 	"select ? as fid, 1 as nid, ? as ival, null as sval\n"
 	"union select ?,2,?,null\n"
@@ -80,19 +85,18 @@ static const char *xdb_sqls[XDB_N_SQLS] = {
 	"union select ?,11,?,null\n"
 	"union select ?,12,?,null\n"
 	"union select ?,13,?,null\n",
-/* REMOVE_XDATA */
-	"delete from xdb_xdata where\n"
-	"fid=(select fid from xdb_xfile where gfid=?) and\n"
-	"nid=(select nid from xdb_xname where name=?)\n",
-/* GET_FID */
+/* [6] UPDATE_STAT (ival, gfid, nid) */
+	"update xdb_xdata set ival=?\n"
+	"where fid=(select fid from xdb_xfile where gfid=?) and nid=?\n",
+/* [7] GET_FID (gfid) */
 	"select fid from xdb_xfile where gfid=?",
-/* GET_COUNT_XFILE */
+/* [8] GET_COUNT_XFILE */
 	"select count(*) from xdb_xfile",
-/* GET_ALL_XFILE */
+/* [9] GET_ALL_XFILE */
 	"select fid,gfid,path,name from xdb_xfile",
-/* GET_ALL_XNAME */
+/* [10] GET_ALL_XNAME */
 	"select nid,name from xdb_xname",
-/* GET_ALL_XDATA */
+/* [11] GET_ALL_XDATA */
 	"select xid,fid,nid,ival,sval from xdb_xdata",
 };
 
@@ -290,24 +294,6 @@ insert:
 
 	return ret;
 }
-
-enum {
-	XDB_ST_DEV	= 0,
-	XDB_ST_INO,
-	XDB_ST_MODE,
-	XDB_ST_NLINK,
-	XDB_ST_UID,
-	XDB_ST_GID,
-	XDB_ST_RDEV,
-	XDB_ST_SIZE,
-	XDB_ST_BLKSIZE,
-	XDB_ST_BLOCKS,
-	XDB_ST_ATIME,
-	XDB_ST_MTIME,
-	XDB_ST_CTIME,
-
-	XDB_N_ST_ATTRS
-};
 
 static inline void
 fill_attr_integer(xdb_attr_t *attr, const char *name, uint64_t ival)
@@ -512,7 +498,8 @@ int xdb_insert_xattr(xdb_t *self, xdb_file_t *file, xdb_attr_t *attr,
 	if (ret)
 		goto out;
 
-	ret = sqlite3_prepare_v2(self->conn, xdb_sqls[INSERT_XDATA], -1, &stmt, 0);
+	ret = sqlite3_prepare_v2(self->conn, xdb_sqls[INSERT_XDATA],
+				-1, &stmt, 0);
 	if (ret)
 		goto out;
 
@@ -565,6 +552,69 @@ out:
 int xdb_remove_xattr (xdb_t *xdb, xdb_file_t *file, const char *name)
 {
 	return 0;
+}
+
+static inline uint64_t get_stat_ival (struct stat *sb, int att)
+{
+	if (!sb)
+		return -1;
+
+	switch (att) {
+	case XDB_ST_DEV:	return sb->st_dev;
+	case XDB_ST_INO:	return sb->st_ino;
+	case XDB_ST_MODE:	return sb->st_mode;
+	case XDB_ST_NLINK:	return sb->st_nlink;
+	case XDB_ST_UID:	return sb->st_uid;
+	case XDB_ST_GID:	return sb->st_gid;
+	case XDB_ST_RDEV:	return sb->st_rdev;
+	case XDB_ST_SIZE:	return sb->st_size;
+	case XDB_ST_BLKSIZE:	return sb->st_blksize;
+	case XDB_ST_BLOCKS:	return sb->st_blocks;
+	case XDB_ST_ATIME:	return sb->st_atime;
+	case XDB_ST_MTIME:	return sb->st_mtime;
+	case XDB_ST_CTIME:	return sb->st_ctime;
+	default: return -1;
+	}
+}
+
+int xdb_update_stat (xdb_t *self, xdb_file_t *file, struct stat *sb, int att)
+{
+	int ret = 0;
+	uint64_t ival = 0;
+	sqlite3_stmt *stmt = NULL;
+
+	__valptr(self);
+	__valptr(file);
+	__valptr(sb);
+
+	ret = sqlite3_prepare_v2(self->conn, xdb_sqls[UPDATE_STAT],
+				-1, &stmt, 0);
+	if (ret)
+		goto out;
+
+	ival = get_stat_ival(sb, att);
+
+	ret = sqlite3_bind_int64(stmt, 1, ival);
+	ret |= sqlite3_bind_text(stmt, 2, file->gfid, -1, SQLITE_STATIC);
+	ret |= sqlite3_bind_int(stmt, 3, att);
+	if (ret)
+		goto out;
+
+	do {
+		ret = sqlite3_step(stmt);
+	} while (ret == SQLITE_BUSY);
+
+	if (ret == SQLITE_DONE)
+		ret = 0;
+out:
+	if (ret) {
+		self->err = sqlite3_errmsg(self->conn);
+		ret = -EIO;
+	}
+	if (stmt)
+		sqlite3_finalize(stmt);
+
+	return ret;
 }
 
 int xdb_get_count (xdb_t *xdb, char *table, uint64_t *count)
