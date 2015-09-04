@@ -25,6 +25,13 @@
 static const int xdb_n_tables = 3;
 extern const char *xdb_schema_sqlstr;
 
+struct xdb_callback_data {
+	dict_t *xdata;
+	uint64_t rows;
+};
+typedef struct xdb_callback_data xdb_callback_data_t;
+
+
 /* pre-compiled queries */
 enum {
 	INSERT_FILE = 0,
@@ -378,7 +385,7 @@ static inline int name_substr_pos(const char *path)
 {
 	char *pos = rindex(path, '/');
 
-	return (int) (((unsigned long) pos - (unsigned long) path) + 1);
+	return (int) (((unsigned long) pos - (unsigned long) path) + 2);
 }
 
 int xdb_insert_file(xdb_t *self, xdb_file_t *file)
@@ -637,6 +644,8 @@ int xdb_read_all_xfile (xdb_t *xdb, dict_t *xdata)
 	ret = 0;
 
 out:
+	dict_unref (xdata);
+
 	if (stmt)
 		sqlite3_finalize(stmt);
 	return ret;
@@ -683,6 +692,8 @@ int xdb_read_all_xname (xdb_t *xdb, dict_t *xdata)
 	ret = 0;
 
 out:
+	dict_unref (xdata);
+
 	if (stmt)
 		sqlite3_finalize(stmt);
 	return ret;
@@ -732,8 +743,62 @@ int xdb_read_all_xdata (xdb_t *xdb, dict_t *xdata)
 	ret = 0;
 
 out:
+	dict_unref (xdata);
+
 	if (stmt)
 		sqlite3_finalize(stmt);
 	return ret;
+}
+
+static
+int direct_query_callback (void *cdata, int argc, char **argv, char **colname)
+{
+	int ret = 0;
+	int i = 0;
+	xdb_callback_data_t *data = cdata;
+	dict_t *xdata = data->xdata;
+	uint64_t rows = data->rows;
+	char keybuf[10] = {0,};
+	char buf[1024] = {0,};
+	char *pos = buf;
+
+	sprintf(keybuf, "%llu", (unsigned long long) rows);
+
+	for (i = 0; i < argc; i++) {
+		pos += sprintf(pos, "%s%c", argv[i],
+				i == argc - 1 ? '\0' : '|');
+	}
+
+	ret = dict_set_dynstr_with_alloc (xdata, keybuf, buf);
+	dict_unref (xdata);
+
+	if (ret)
+		return ret;
+
+	data->rows = rows + 1;
+	return 0;
+}
+
+int xdb_direct_query (xdb_t *xdb, char *sql, dict_t *xdata)
+{
+	int ret = 0;
+	xdb_callback_data_t cdata;
+
+	__valptr(xdb);
+	__valptr(sql);
+	__valptr(xdata);
+
+	cdata.rows = 0;
+	cdata.xdata = xdata;
+
+	ret = sqlite3_exec(xdb->conn, sql, &direct_query_callback, &cdata,
+			   (char **) &xdb->err);
+	if (ret)
+		return -EIO;
+
+	ret = dict_set_uint64 (xdata, "count", cdata.rows);
+	dict_unref (xdata);
+
+	return 0;
 }
 

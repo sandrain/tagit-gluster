@@ -66,12 +66,14 @@ typedef int acl_type_t;
 #define GFAPI_PRIVATE(sym, ver) __asm("_" __STRING(sym) "$GFAPI_PRIVATE_" __STRING(ver))
 #endif
 
+/* dict_t support for ipc */
+#include "dict.h"
+
 __BEGIN_DECLS
 
 /* The filesystem object. One object per 'virtual mount' */
 struct glfs;
 typedef struct glfs glfs_t;
-
 
 /*
   SYNOPSIS
@@ -772,7 +774,7 @@ glfs_fd_t *glfs_dup (glfs_fd_t *fd) __THROW
  * test script, and that doesn't need xdata.  Adding dict_t support and a new
  * header-file requirement doesn't seem worth it until the need is greater.
  */
-int glfs_ipc (glfs_fd_t *fd, int cmd) __THROW
+int glfs_ipc (glfs_fd_t *fd, int cmd, dict_t *in, dict_t **out) __THROW
         GFAPI_PUBLIC(glfs_ipc, 3.7.0);
 
 __END_DECLS

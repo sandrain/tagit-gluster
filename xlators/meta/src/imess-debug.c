@@ -46,8 +46,10 @@ static inline int file_fill_all_records(strfd_t *strfd, dict_t *xdata)
 		sprintf(keybuf, "%llu", (unsigned long long) i);
 		ret = dict_get_str (xdata, keybuf, &row);
 
-		strprintf(strfd, "[%10llu] %s\n", (unsigned long long) i, row);
+		strprintf(strfd, "[%7llu] %s\n", (unsigned long long) i, row);
 	}
+
+	dict_unref (xdata);
 
 	return strfd->size;
 }
@@ -75,9 +77,16 @@ imess_xfile_fill (xlator_t *this, inode_t *file, strfd_t *strfd)
 
 	ret = syncop_ipc (xl, op, xdin, &xdout);
 	if (ret)
-		return -1;
+		goto out;
 
-	return file_fill_all_records (strfd, xdout);
+	ret = file_fill_all_records (strfd, xdout);
+out:
+	if (xdout)
+		dict_unref (xdout);
+	if (xdin)
+		dict_unref (xdin);
+
+	return ret;
 }
 
 static int
@@ -127,9 +136,16 @@ imess_xname_fill (xlator_t *this, inode_t *file, strfd_t *strfd)
 
 	ret = syncop_ipc (xl, op, xdin, &xdout);
 	if (ret)
-		return -1;
+		goto out;
 
-	return file_fill_all_records (strfd, xdout);
+	ret = file_fill_all_records (strfd, xdout);
+out:
+	if (xdout)
+		dict_unref (xdout);
+	if (xdin)
+		dict_unref (xdin);
+
+	return ret;
 }
 
 static int
@@ -179,9 +195,16 @@ imess_xdata_fill (xlator_t *this, inode_t *file, strfd_t *strfd)
 
 	ret = syncop_ipc (xl, op, xdin, &xdout);
 	if (ret)
-		return -1;
+		goto out;
 
-	return file_fill_all_records (strfd, xdout);
+	ret = file_fill_all_records (strfd, xdout);
+out:
+	if (xdout)
+		dict_unref (xdout);
+	if (xdin)
+		dict_unref (xdin);
+
+	return ret;
 }
 
 static int
@@ -310,6 +333,121 @@ meta_imess_debug_all_dir_hook (call_frame_t *frame, xlator_t *this,
 }
 
 /*
+ * debug/sql
+ */
+
+/** FIXME: this global will mess up everything */
+static char sql[4096];
+
+static int
+imess_sql_query_fill (xlator_t *this, inode_t *file, strfd_t *strfd)
+{
+	strprintf (strfd, "%s\n", sql);
+
+	return strfd->size;
+}
+
+static int
+imess_sql_query_write (xlator_t *this, fd_t *fd, struct iovec *iov, int count)
+{
+	memcpy(sql, iov[0].iov_base, iov[0].iov_len);
+	sql[iov[0].iov_len] = '\0';
+
+	return iov_length (iov, count);
+}
+
+struct meta_ops imess_sql_query_ops = {
+	.file_fill = imess_sql_query_fill,
+	.file_write = imess_sql_query_write,
+};
+
+int
+meta_imess_sql_query_hook (call_frame_t *frame, xlator_t *this, loc_t *loc,
+			dict_t *xdata)
+{
+	meta_ops_set (loc->inode, this, &imess_sql_query_ops);
+
+	return 0;
+}
+
+static int
+imess_sql_result_fill (xlator_t *this, inode_t *file, strfd_t *strfd)
+{
+	int ret = 0;
+	int op = 0;
+	xlator_t *xl = NULL;
+	dict_t *xdin = NULL;
+	dict_t *xdout = NULL;
+
+	xl = this->children->xlator;
+
+	xdin = dict_new ();
+	ret = dict_set_str (xdin, "clients", "all");
+	ret = dict_set_str (xdin, "sql", sql);
+
+	ret = syncop_ipc (xl, op, xdin, &xdout);
+	if (ret)
+		goto out;
+
+	ret = file_fill_all_records (strfd, xdout);
+out:
+	if (xdout)
+		dict_unref (xdout);
+	if (xdin)
+		dict_unref (xdin);
+
+	return ret;
+		goto out;
+
+}
+
+static int
+imess_sql_result_write (xlator_t *this, fd_t *fd, struct iovec *iov, int count)
+{
+	return 0;
+}
+
+struct meta_ops imess_sql_result_ops = {
+	.file_fill = imess_sql_result_fill,
+	.file_write = imess_sql_result_write,
+};
+
+int
+meta_imess_sql_result_hook (call_frame_t *frame, xlator_t *this, loc_t *loc,
+			dict_t *xdata)
+{
+	meta_ops_set (loc->inode, this, &imess_sql_result_ops);
+
+	return 0;
+}
+
+static struct meta_dirent imess_debug_sql_dir_dirents[] = {
+	DOT_DOTDOT,
+	{ .name = "query",
+	  .type = IA_IFREG,
+	  .hook = meta_imess_sql_query_hook,
+	},
+	{ .name = "result",
+	  .type = IA_IFREG,
+	  .hook = meta_imess_sql_result_hook,
+	},
+	{ .name = NULL },
+};
+
+struct meta_ops imess_debug_sql_dir_ops = {
+	.fixed_dirents = imess_debug_sql_dir_dirents,
+};
+
+int
+meta_imess_debug_sql_dir_hook (call_frame_t *frame, xlator_t *this,
+				loc_t *loc, dict_t *xdata)
+{
+	meta_ops_set (loc->inode, this, &imess_debug_sql_dir_ops);
+
+	return 0;
+}
+
+/*
  * debug dir
  */
 
@@ -318,6 +456,10 @@ static struct meta_dirent imess_debug_dirents[] = {
 	{ .name = "all",
 	  .type = IA_IFDIR,
 	  .hook = meta_imess_debug_all_dir_hook,
+	},
+	{ .name = "sql",
+	  .type = IA_IFDIR,
+	  .hook = meta_imess_debug_sql_dir_hook,
 	},
 	{ .name = NULL },
 };

@@ -498,32 +498,45 @@ imess_ipc (call_frame_t *frame, xlator_t *this, int op, dict_t *xdata)
 	priv = this->private;
 	xdb = priv->xdb;
 
-	op_ret = dict_get_str (xdata, "query", &req);
-	xdout = dict_new ();
+	/** TODO: shit, fix this */
+	op_ret = dict_get_str (xdata, "sql", &req);
+	if (op_ret == 0) {
+		xdout = dict_new ();
 
-	if (!strcmp(req, "xfile")) {
-		op_ret = xdb_read_all_xfile (xdb, xdout);
+		op_ret = xdb_direct_query (xdb, req, xdout);
 		if (op_ret) {
-			op_errno = -EIO;
-			goto out;
-		}
-	}
-	else if (!strcmp(req, "xname")) {
-		op_ret = xdb_read_all_xname (xdb, xdout);
-		if (op_ret) {
-			op_errno = -EIO;
-			goto out;
-		}
-	}
-	else if (!strcmp(req, "xdata")) {
-		op_ret = xdb_read_all_xdata (xdb, xdout);
-		if (op_ret) {
-			op_errno = -EIO;
+			op_errno = -1;
 			goto out;
 		}
 	}
 	else {
-		/* do error handling */
+		op_ret = dict_get_str (xdata, "query", &req);
+		xdout = dict_new ();
+
+		if (!strcmp(req, "xfile")) {
+			op_ret = xdb_read_all_xfile (xdb, xdout);
+			if (op_ret) {
+				op_errno = -1;
+				goto out;
+			}
+		}
+		else if (!strcmp(req, "xname")) {
+			op_ret = xdb_read_all_xname (xdb, xdout);
+			if (op_ret) {
+				op_errno = -1;
+				goto out;
+			}
+		}
+		else if (!strcmp(req, "xdata")) {
+			op_ret = xdb_read_all_xdata (xdb, xdout);
+			if (op_ret) {
+				op_errno = -1;
+				goto out;
+			}
+		}
+		else {
+			/* do error handling */
+		}
 	}
 
 out:

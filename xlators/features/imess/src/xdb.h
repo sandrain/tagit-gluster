@@ -201,6 +201,8 @@ int xdb_read_all_xfile (xdb_t *xdb, dict_t *xdata);
 int xdb_read_all_xname (xdb_t *xdb, dict_t *xdata);
 int xdb_read_all_xdata (xdb_t *xdb, dict_t *xdata);
 
+int xdb_direct_query (xdb_t *xdb, char *sql, dict_t *xdata);
+
 #if 0
 /**
  * xdb_insert_record: populate attributes in xdb. if the @attr is empty, this

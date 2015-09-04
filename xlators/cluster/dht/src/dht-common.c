@@ -7185,7 +7185,8 @@ unlock:
 			/** handle error */
 		}
                 DHT_STACK_UNWIND (ipc, frame, 0, 0, dict_req);
-		dict_unref (dict_req);
+		if (dict_req)
+			dict_unref (dict_req);
         }
 
 out:
@@ -7221,8 +7222,20 @@ int dht_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata)
 	if (ret)
 		goto call_default;
 
-	if (strcmp(clist_str, "all") == 0)
+	if (strcmp(clist_str, "all") == 0) {
 		all = 1;
+		call_cnt = conf->subvolume_cnt;
+	}
+	else {
+		for (i = 0; i < conf->subvolume_cnt; i++) {
+			subvol = conf->subvolumes[i];
+			if (!gf_strstr(clist_str, ",", subvol->name))
+				call_cnt++;
+		}
+	}
+
+	local->call_cnt = call_cnt;
+	local->ipc_req = dict_new ();
 
 	for (i = 0; i < conf->subvolume_cnt; i++) {
 		subvol = conf->subvolumes[i];
@@ -7231,11 +7244,9 @@ int dht_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata)
 
 		STACK_WIND (frame, dht_ipc_cbk, subvol, subvol->fops->ipc,
 			    op, xdata);
-		call_cnt++;
 	}
 
-	local->call_cnt = call_cnt;
-	local->ipc_req = dict_new ();
+	dict_unref (xdata);
 
 	return 0;
 
