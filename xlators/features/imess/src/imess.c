@@ -79,7 +79,7 @@ imess_mkdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 
 	priv = this->private;
 
-	if (op_errno)
+	if (op_ret == -1)
 		goto out;
 
 	ret = put_stat_attr(priv, buf, (const char *) cookie);
@@ -107,7 +107,7 @@ imess_unlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	priv = this->private;
 	file.gfid = cookie;
 
-	if (op_errno)
+	if (op_ret == -1)
 		goto out;
 
 	ret = xdb_remove_file(priv->xdb, &file);
@@ -116,7 +116,7 @@ imess_unlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 				"xdb_remove_file failed");
 
 out:
-	GF_FREE(cookie);
+	//FREE(cookie);
         IMESS_STACK_UNWIND (unlink, frame, op_ret, op_errno,
                             preparent, postparent, xdata);
 	return 0;
@@ -135,7 +135,7 @@ imess_rmdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	priv = this->private;
 	file.gfid = cookie;
 
-	if (op_errno)
+	if (op_ret == -1)
 		goto out;
 
 	ret = xdb_remove_file(priv->xdb, &file);
@@ -144,7 +144,7 @@ imess_rmdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 				"xdb_remove_file failed");
 
 out:
-	GF_FREE(cookie);
+	//FREE(cookie);
         IMESS_STACK_UNWIND (rmdir, frame, op_ret, op_errno,
                             preparent, postparent, xdata);
 	return 0;
@@ -162,7 +162,7 @@ imess_create_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 
 	priv = this->private;
 
-	if (op_errno)
+	if (op_ret == -1)
 		goto out;
 
 	ret = put_stat_attr(priv, buf, (const char *) cookie);
@@ -189,7 +189,7 @@ imess_symlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 
 	priv = this->private;
 
-	if (op_errno)
+	if (op_ret == -1)
 		goto out;
 
 	ret = put_stat_attr(priv, buf, (const char *) cookie);
@@ -218,7 +218,7 @@ imess_writev_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	priv = this->private;
 	xdb = priv->xdb;
 
-	if (op_errno)
+	if (op_ret == -1)
 		goto out;
 
 	iatt_to_stat(postbuf, &sb);
@@ -251,6 +251,7 @@ out:
 			"imess_writev_cbk: %s", xdb->err);
 	}
 
+	FREE (cookie);
         IMESS_STACK_UNWIND (writev, frame, op_ret, op_errno, prebuf, postbuf,
                             xdata);
         return 0;
@@ -307,80 +308,6 @@ out:
         return ret;
 }
 
-#if 0
-int
-imess_fsyncdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
-                    int32_t op_ret, int32_t op_errno, dict_t *xdata)
-{
-	int ret = 0;
-	imess_priv_t *priv = NULL;
-	xdb_t *xdb = NULL;
-
-	priv = this->private;
-	xdb = priv->xdb;
-
-	if (priv->recovery_mode == IMESS_REC_SYNC) {
-		ret = xdb_tx_commit(priv->xdb);
-		ret |= xdb_tx_begin(priv->xdb);
-		if (ret) {
-			gf_log (this->name, GF_LOG_ERROR,
-				"imess_fsyncdir_cbk: %s",
-				xdb->err);
-		}
-	}
-
-        IMESS_STACK_UNWIND (fsyncdir, frame, op_ret, op_errno, xdata);
-        return ret;
-}
-#endif
-
-/*
- * xlator file operations.
- */
-
-#if 0
-int32_t
-imess_lookup (call_frame_t *frame, xlator_t *this, loc_t *loc, dict_t *xdata)
-{
-	int ret = 0;
-	imess_priv_t *priv = NULL;
-	xdb_t *xdb = NULL;
-
-	priv = this->private;
-
-	if (strcmp(loc->path, "/imessmeasure"))
-		goto pass;
-
-	xdb = priv->xdb;
-
-	gf_log (this->name, GF_LOG_INFO, "imess lookup: sending query");
-#if 0
-	ret = xdb_measure(xdb, "select gfid,path from xdb_file where fid in "
-                               "(select fid from xdb_xdata "
-			       "where aid=9 and ival=1919191919)");
-#endif
-	/* this will be slower, not using the index? */
-	ret = xdb_measure(xdb, "select gfid,path from xdb_file "
-			       "where path like '%never-existing-file.nono'");
-	if (ret)
-		gf_log (this->name, GF_LOG_ERROR, "xdb_measure failed.");
-	else
-		gf_log (this->name, GF_LOG_INFO, "query successfully finished");
-
-	/* This line gives 10s synchronous delay to the: touch imessmeasure.
-	sleep(10);
-	*/
-
-pass:
-        STACK_WIND (frame, imess_lookup_cbk,
-                    FIRST_CHILD(this),
-                    FIRST_CHILD(this)->fops->lookup,
-                    loc, xdata);
-
-        return 0;
-}
-#endif
-
 int
 imess_stat (call_frame_t *frame, xlator_t *this, loc_t *loc, dict_t *xdata)
 {
@@ -420,7 +347,7 @@ imess_unlink (call_frame_t *frame, xlator_t *this, loc_t *loc, int xflag,
 {
 	void *cookie = NULL;
 
-	cookie = uuid_utoa(loc->gfid);
+	cookie = uuid_utoa(loc->inode->gfid);
 
         STACK_WIND_COOKIE (frame, imess_unlink_cbk, cookie,
                            FIRST_CHILD(this),
@@ -435,7 +362,7 @@ imess_rmdir (call_frame_t *frame, xlator_t *this, loc_t *loc, int flags,
 {
 	void *cookie = NULL;
 
-	cookie = uuid_utoa(loc->gfid);
+	cookie = uuid_utoa(loc->inode->gfid);
 
         STACK_WIND_COOKIE (frame, imess_rmdir_cbk, cookie,
                            FIRST_CHILD(this),
@@ -508,7 +435,7 @@ imess_fsync (call_frame_t *frame, xlator_t *this, fd_t *fd, int32_t datasync,
 int
 imess_ipc (call_frame_t *frame, xlator_t *this, int op, dict_t *xdata)
 {
-	int op_ret = 0;
+	int op_ret = -1;
 	int op_errno = 0;
 	dict_t *xdout = NULL;
 	imess_priv_t *priv = NULL;
@@ -525,7 +452,7 @@ imess_ipc (call_frame_t *frame, xlator_t *this, int op, dict_t *xdata)
 
 		op_ret = xdb_direct_query (xdb, req, xdout);
 		if (op_ret) {
-			op_errno = -1;
+			op_errno = EIO;
 			goto out;
 		}
 	}
@@ -536,28 +463,32 @@ imess_ipc (call_frame_t *frame, xlator_t *this, int op, dict_t *xdata)
 		if (!strcmp(req, "xfile")) {
 			op_ret = xdb_read_all_xfile (xdb, xdout);
 			if (op_ret) {
-				op_errno = -1;
+				op_errno = EIO;
 				goto out;
 			}
 		}
 		else if (!strcmp(req, "xname")) {
 			op_ret = xdb_read_all_xname (xdb, xdout);
 			if (op_ret) {
-				op_errno = -1;
+				op_errno = EIO;
 				goto out;
 			}
 		}
 		else if (!strcmp(req, "xdata")) {
 			op_ret = xdb_read_all_xdata (xdb, xdout);
 			if (op_ret) {
-				op_errno = -1;
+				op_errno = EIO;
 				goto out;
 			}
 		}
 		else {
 			/* do error handling */
+			op_errno = EINVAL;
+			goto out;
 		}
 	}
+
+	op_ret = 0;
 
 out:
 	STACK_UNWIND_STRICT (ipc, frame, op_ret, op_errno, xdout);
