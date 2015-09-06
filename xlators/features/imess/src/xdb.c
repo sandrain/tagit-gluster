@@ -100,20 +100,17 @@ static const char *xdb_sqls[XDB_N_SQLS] = {
 	"select xid,fid,nid,ival,sval from xdb_xdata",
 };
 
-/* max 1.5 GB currently */
-static inline int enable_mmap(xdb_t *self)
-{
-	return xdb_exec_simple_sql(self, "PRAGMA mmap_size=1610612736");
-}
+static const char *pragma_str =
+	"PRAGMA mmap_size=1610612736;"		/* max 1.5 GB */
+	"PRAGMA journal_mode=WAL;"
+	"PRAGMA wal_autocheckpoint=0;"
+	"PRAGMA wal_checkpoint(TRUNCATE);"
+	"PRAGMA synchronous=1;"			/* normal */
+	"PRAGMA temp_store=2;";			/* memory */
 
-static inline int enable_wal(xdb_t *self)
+static inline int db_configure_pragma(xdb_t *self)
 {
-	/* this enables WAL and disables the automatic checkpoint which is by
-	 * default performed on exceeding 1,000 pages */
-	return xdb_exec_simple_sql(self,
-				"PRAGMA journal_mode=WAL;"
-				"PRAGMA wal_autocheckpoint=0;"
-				"PRAGMA wal_checkpoint(TRUNCATE);");
+	return xdb_exec_simple_sql(self, pragma_str);
 }
 
 static int get_fid(xdb_t *self, xdb_file_t *file, uint64_t *fid)
@@ -332,8 +329,9 @@ int xdb_init (/* out */ xdb_t **xdb, const char *path)
 	self->conn = conn;
 	self->dbpath = strdup(path);
 
-	enable_mmap(self);
-	enable_wal(self);
+	ret = db_configure_pragma(self);
+	if (ret)
+		goto out_free;
 
 	ret = db_initialize(self);
 	if (ret)

@@ -32,6 +32,9 @@ put_stat_attr(imess_priv_t *priv, struct iatt *buf, const char *path)
 	file.gfid = uuid_utoa(buf->ia_gfid);
 	file.path = path;
 
+	if (priv->commit_mode == IMESS_COMMIT_PARANOID)
+		xdb_tx_begin(xdb);
+
 	if (path) {
 		ret = xdb_insert_file(xdb, &file);
 		if (ret) {
@@ -45,10 +48,17 @@ put_stat_attr(imess_priv_t *priv, struct iatt *buf, const char *path)
 	iatt_to_stat(buf, &sb);
 
 	ret = xdb_insert_stat(xdb, &file, &sb);
-	if (ret)
+	if (ret) {
 		gf_log("imess", GF_LOG_ERROR,
 		       "put_stat_attr: xdb_insert_stat failed (%s)",
 		       xdb->err);
+		if (priv->commit_mode == IMESS_COMMIT_PARANOID)
+			xdb_tx_abort(xdb);
+	}
+	else {
+		if (priv->commit_mode == IMESS_COMMIT_PARANOID)
+			xdb_tx_commit(xdb);
+	}
 
 out:
 	return ret;
@@ -58,6 +68,7 @@ out:
  * xlator callbacks.
  */
 
+#if 0
 int
 imess_stat_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 		int32_t op_ret, int32_t op_errno, struct iatt *buf,
@@ -66,6 +77,7 @@ imess_stat_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	IMESS_STACK_UNWIND(stat, frame, op_ret, op_errno, buf, xdata);
 	return 0;
 }
+#endif
 
 int
 imess_mkdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
@@ -102,21 +114,32 @@ imess_unlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 {
 	int ret = 0;
 	imess_priv_t *priv = NULL;
+	xdb_t *xdb = NULL;
 	xdb_file_t file = { 0, };
 
 	priv = this->private;
+	xdb = priv->xdb;
 	file.gfid = cookie;
 
 	if (op_ret == -1)
 		goto out;
 
-	ret = xdb_remove_file(priv->xdb, &file);
-	if (ret)
+	if (priv->commit_mode == IMESS_COMMIT_PARANOID)
+		xdb_tx_begin(xdb);
+
+	ret = xdb_remove_file(xdb, &file);
+	if (ret) {
 		gf_log(this->name, GF_LOG_WARNING, "imess_unlink_cbk: "
 				"xdb_remove_file failed");
+		if (priv->commit_mode == IMESS_COMMIT_PARANOID)
+			xdb_tx_abort(xdb);
+	}
+	else {
+		if (priv->commit_mode == IMESS_COMMIT_PARANOID)
+			xdb_tx_commit(xdb);
+	}
 
 out:
-	//FREE(cookie);
         IMESS_STACK_UNWIND (unlink, frame, op_ret, op_errno,
                             preparent, postparent, xdata);
 	return 0;
@@ -130,21 +153,32 @@ imess_rmdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 {
 	int ret = 0;
 	imess_priv_t *priv = NULL;
+	xdb_t *xdb = NULL;
 	xdb_file_t file = { 0, };
 
 	priv = this->private;
+	xdb = priv->xdb;
 	file.gfid = cookie;
 
 	if (op_ret == -1)
 		goto out;
 
+	if (priv->commit_mode == IMESS_COMMIT_PARANOID)
+		xdb_tx_begin(xdb);
+
 	ret = xdb_remove_file(priv->xdb, &file);
-	if (ret)
+	if (ret) {
 		gf_log(this->name, GF_LOG_WARNING, "imess_rmdir_cbk: "
 				"xdb_remove_file failed");
+		if (priv->commit_mode == IMESS_COMMIT_PARANOID)
+			xdb_tx_abort(xdb);
+	}
+	else {
+		if (priv->commit_mode == IMESS_COMMIT_PARANOID)
+			xdb_tx_commit(xdb);
+	}
 
 out:
-	//FREE(cookie);
         IMESS_STACK_UNWIND (rmdir, frame, op_ret, op_errno,
                             preparent, postparent, xdata);
 	return 0;
@@ -224,6 +258,14 @@ imess_writev_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	iatt_to_stat(postbuf, &sb);
 	file.gfid = (const char *) cookie;
 
+	if (prebuf->ia_mtime == postbuf->ia_mtime
+	    && prebuf->ia_size == postbuf->ia_size
+	    && prebuf->ia_blocks == postbuf->ia_blocks)
+		goto pass;
+
+	if (priv->commit_mode == IMESS_COMMIT_PARANOID)
+		xdb_tx_begin(xdb);
+
 	/* mtime */
 	if (prebuf->ia_mtime != postbuf->ia_mtime) {
 		ret = xdb_update_stat(xdb, &file, &sb, XDB_ST_MTIME);
@@ -249,8 +291,14 @@ out:
 	if (ret) {
 		gf_log(this->name, GF_LOG_WARNING,
 			"imess_writev_cbk: %s", xdb->err);
+		if (priv->commit_mode == IMESS_COMMIT_PARANOID)
+			xdb_tx_abort(xdb);
 	}
-
+	else {
+		if (priv->commit_mode == IMESS_COMMIT_PARANOID)
+			xdb_tx_commit(xdb);
+	}
+pass:
 	FREE (cookie);
         IMESS_STACK_UNWIND (writev, frame, op_ret, op_errno, prebuf, postbuf,
                             xdata);
@@ -287,17 +335,8 @@ imess_fsync_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	if (datasync)
 		goto out;
 
-	if (priv->recovery_mode == IMESS_REC_SYNC) {
-		int pn_log = 0, pn_ckpt = 0;
-
+	if (priv->commit_mode == IMESS_COMMIT_SYNC) {
 		xdb_tx_commit(priv->xdb);
-
-		ret = xdb_checkpoint_fast(xdb, &pn_log, &pn_ckpt);
-
-		gf_log (this->name, GF_LOG_WARNING,
-			"checkpoint: (status=%s), pn_log=%d, pn_ckpt=%d",
-			xdb->err, pn_log, pn_ckpt);
-
 		xdb_tx_begin(priv->xdb);
 	}
 
@@ -308,6 +347,7 @@ out:
         return ret;
 }
 
+#if 0
 int
 imess_stat (call_frame_t *frame, xlator_t *this, loc_t *loc, dict_t *xdata)
 {
@@ -326,6 +366,7 @@ call_child:
 		    loc, xdata);
 	return 0;
 }
+#endif
 
 int
 imess_mkdir (call_frame_t *frame, xlator_t *this, loc_t *loc, mode_t mode,
@@ -543,7 +584,7 @@ init (xlator_t *this)
 {
 	int ret = -1;
 	dict_t *options = NULL;
-	//char *recovery_mode = NULL;
+	char *commit_mode = NULL;
 	imess_priv_t *priv = NULL;
 
 	GF_VALIDATE_OR_GOTO ("imess", this, out);
@@ -566,10 +607,17 @@ init (xlator_t *this)
 	options = this->options;
 
 	GF_OPTION_INIT ("db-path", priv->dbpath, str, out);
-	//GF_OPTION_INIT ("recovery-mode", recovery_mode, str, out);
+	GF_OPTION_INIT ("commit-mode", commit_mode, str, out);
 	GF_OPTION_INIT ("enable-lookup-cache", priv->lookup_cache, bool, out);
 
-	priv->recovery_mode = IMESS_REC_SYNC;
+	if (0 == strcmp(commit_mode, "lazy"))
+		priv->commit_mode = IMESS_COMMIT_LAZY;
+	else if (0 == strcmp(commit_mode, "paranoid"))
+		priv->commit_mode = IMESS_COMMIT_PARANOID;
+	else if (0 == strcmp(commit_mode, "dynamic"))
+		priv->commit_mode = IMESS_COMMIT_DYNAMIC;
+	else	/* default (including non-senses) falls back to the sync mode */
+		priv->commit_mode = IMESS_COMMIT_SYNC;
 
 	ret = xdb_init (&priv->xdb, priv->dbpath);
 	if (ret) {
@@ -578,11 +626,12 @@ init (xlator_t *this)
 		goto out;
 	}
 
-	xdb_tx_begin (priv->xdb);
+	if (priv->commit_mode != IMESS_COMMIT_PARANOID)
+		xdb_tx_begin (priv->xdb);
 
-	gf_log (this->name, GF_LOG_TRACE, "imess initialized. "
-		"(database path: %s, lookup cache: %d)",
-		priv->dbpath, priv->lookup_cache);
+	gf_log (this->name, GF_LOG_INFO, "imess initialized. "
+		"(database path: %s, lookup cache: %d, commit mode: %s)",
+		priv->dbpath, priv->lookup_cache, commit_mode);
 
 out:
 	if (ret < 0) {
@@ -602,7 +651,8 @@ fini (xlator_t *this)
 
 	priv = this->private;
 
-	xdb_tx_commit (priv->xdb);
+	if (priv->commit_mode == IMESS_COMMIT_PARANOID)
+		xdb_tx_commit (priv->xdb);
 
 	xdb_exit (priv->xdb);
 
@@ -618,7 +668,6 @@ struct xlator_cbks cbks = {
 };
 
 struct xlator_fops fops = {
-        .stat        = imess_stat,
         .mkdir       = imess_mkdir,
         .unlink      = imess_unlink,
         .rmdir       = imess_rmdir,
@@ -628,6 +677,7 @@ struct xlator_fops fops = {
         .fsync       = imess_fsync,
 	.ipc         = imess_ipc,
 #if 0
+        .stat        = imess_stat,
 	.lookup      = imess_lookup,
         .fsyncdir    = imess_fsyncdir,
         .readlink    = imess_readlink,
@@ -671,11 +721,9 @@ struct volume_options options [] = {
 	{ .key = { "enable-lookup-cache" },
 	  .type = GF_OPTION_TYPE_BOOL,
 	},
-#if 0
-	{ .key = { "recovery-mode" },
+	{ .key = { "commit-mode" },
           .type = GF_OPTION_TYPE_STR,
 	},
-#endif
 	{ .key = { NULL } },
 };
 

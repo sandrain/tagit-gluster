@@ -23,16 +23,16 @@
 
 /* recovery mode */
 enum {
-	IMESS_REC_NONE		= 0,	/* no commit until unmount */
-	IMESS_REC_PESS,			/* pessimistic: commit on each ops */
-	IMESS_REC_FRAC,			/* commit on each XX ops */
-	IMESS_REC_SYNC,			/* commit on each sync ops */
+	IMESS_COMMIT_LAZY		= 0,	/* no commit until unmount */
+	IMESS_COMMIT_SYNC,			/* only for journal commit */
+	IMESS_COMMIT_PARANOID,			/* crazy, commit all */
+	IMESS_COMMIT_DYNAMIC,			/* dynamic to the load */
 };
 
 typedef struct {
 	char          *dbpath;
 	xdb_t         *xdb;
-	int            recovery_mode;
+	int            commit_mode;
 	gf_boolean_t   lookup_cache;
 } imess_priv_t;
 
