@@ -100,11 +100,34 @@ static const char *xdb_sqls[XDB_N_SQLS] = {
 	"select xid,fid,nid,ival,sval from xdb_xdata",
 };
 
+/**
+ * consistency/durability in SQLite3, more details at:
+ * https://www.sqlite.org/wal.html
+ *
+ * - WAL (Write Ahead Log): changes to the database are written to a separate
+ *   journal (WAL) file. original database file is not changed.
+ * - When a transaction is committed, the commit block is written to the
+ *   journal file. In this way, SQLite can guarantee the atomicity of a
+ *   transaction.
+ * - WAL is mapped into a process using the shared memory.
+ * - The WAL contents are applied to the actual database file during
+ *   'checkpoint'.
+ * - The commit of each transaction may or may not hit the disk, depending on
+ *   the pragma setting, pragma synchronous:
+ *   . pragma.synchronous = 0 (off), no sync happens
+ *   . pragma.synchronous = 1 (normal), WAL file is synchronized before
+ *     checkpiont, database file is synchronized after checkpoint.
+ *   . pragma.synchronous = 2 (full), WAL file is synchronized for each commit.
+ * - By default, the checkpoint happens when more than 1,000 pages are written
+ *   to the WAL file.
+ */
 static const char *pragma_str =
 	"PRAGMA mmap_size=1610612736;"		/* max 1.5 GB */
 	"PRAGMA journal_mode=WAL;"
+#if 0
 	"PRAGMA wal_autocheckpoint=0;"
 	"PRAGMA wal_checkpoint(TRUNCATE);"
+#endif
 	"PRAGMA synchronous=1;"			/* normal */
 	"PRAGMA temp_store=2;";			/* memory */
 
