@@ -211,6 +211,19 @@ int xdb_checkpoint (xdb_t *xdb, int mode, int *pn_log, int *pn_ckpt)
 	return ret;
 }
 
+static inline int xdb_set_autocheckpoint (xdb_t *xdb, int freq)
+{
+	int ret = 0;
+
+	ret = sqlite3_wal_autocheckpoint(xdb->conn, freq);
+	if (ret != SQLITE_OK) {
+		xdb->err = sqlite3_errmsg(xdb->conn);
+		return -1;
+	}
+
+	return 0;
+}
+
 static inline int xdb_checkpoint_fast (xdb_t *xdb, int *pn_log, int *pn_ckpt)
 {
 	return xdb_checkpoint (xdb, SQLITE_CHECKPOINT_PASSIVE,
@@ -223,97 +236,14 @@ static inline int xdb_checkpoint_full (xdb_t *xdb, int *pn_log, int *pn_ckpt)
 				pn_log, pn_ckpt);
 }
 
-int xdb_get_count (xdb_t *xdb, char *table, uint64_t *count);
 
 /* for debug */
 int xdb_read_all_xfile (xdb_t *xdb, dict_t *xdata);
 int xdb_read_all_xname (xdb_t *xdb, dict_t *xdata);
 int xdb_read_all_xdata (xdb_t *xdb, dict_t *xdata);
 
+int xdb_get_count (xdb_t *xdb, char *table, uint64_t *count);
 int xdb_direct_query (xdb_t *xdb, char *sql, dict_t *xdata);
-
-#if 0
-/**
- * xdb_insert_record: populate attributes in xdb. if the @attr is empty, this
- * will only populate the file record.
- *
- * @xdb: xdb instance
- * @file: file, will be appended if not exists already
- * @attr: array of attributes
- * @n_attr: number of elements in @attr array
- *
- * returns 0 on success, otherwise:
- * -EINVAL if the xdb is not a vaild instance
- * -EIO if database connection fails.
- */
-int xdb_insert_record (xdb_t *xdb, xdb_file_t *file,
-			xdb_attr_t *attr, uint64_t n_attr);
-
-static inline int xdb_insert_file (xdb_t *xdb, xdb_file_t *file)
-{
-	return xdb_insert_record(xdb, file, NULL, 0);
-}
-
-int xdb_remove_file (xdb_t *xdb, xdb_file_t *file);
-
-/**
- * xdb_insert_stat: populate the @stat attributes.
- *
- * @xdb: xdb instance
- * @file: file, will be appended if not exists already
- * @stat: stat(2) records for the @file
- *
- * returns 0 on success, otherwise:
- * -EINVAL if the xdb is not a vaild instance
- * -EIO if database connection fails.
- */
-int xdb_insert_stat (xdb_t *xdb, xdb_file_t *file, struct stat *stat);
-
-/**
- * xdb_query_files: query files with the given condition.
- *
- * @xdb: xdb instance
- * @cond: the search condition
- * @files: array of the result files, should be freed using xdb_free_files
- * @n_files: number of elements in @files array
- *
- * returns 0 on success, otherwise:
- * -EINVAL if the xdb is not a vaild instance
- */
-int xdb_query_files (xdb_t *xdb, xdb_search_cond_t *cond,
-			/* out */ xdb_file_t **files,
-			/* out */ uint64_t n_files);
-
-/**
- *
- *
- * @xdb
- *
- * 
- */
-static inline int xdb_tx_begin (xdb_t *xdb)
-{
-	tx_begin(xdb);
-	return 0;
-}
-
-/**
- * Commit current changes made in the index database. 
- *
- * @xdb
- *
- * 
- */
-static inline int xdb_tx_commit (xdb_t *xdb)
-{
-	tx_commit(xdb);
-	return 0;
-}
-
-int xdb_wal_checkpoint (xdb_t *xdb, int *pn_log, int *pn_chkpnt);
-
-int xdb_measure (xdb_t *xdb, const char *query);
-#endif
 
 #endif	/* _IMESS_XDB_H_ */
 

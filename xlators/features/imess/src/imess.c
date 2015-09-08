@@ -32,8 +32,7 @@ put_stat_attr(imess_priv_t *priv, struct iatt *buf, const char *path)
 	file.gfid = uuid_utoa(buf->ia_gfid);
 	file.path = path;
 
-	if (priv->commit_mode == IMESS_COMMIT_PARANOID)
-		xdb_tx_begin(xdb);
+	xdb_tx_begin(xdb);
 
 	if (path) {
 		ret = xdb_insert_file(xdb, &file);
@@ -52,13 +51,10 @@ put_stat_attr(imess_priv_t *priv, struct iatt *buf, const char *path)
 		gf_log("imess", GF_LOG_ERROR,
 		       "put_stat_attr: xdb_insert_stat failed (%s)",
 		       xdb->err);
-		if (priv->commit_mode == IMESS_COMMIT_PARANOID)
-			xdb_tx_abort(xdb);
+		xdb_tx_abort(xdb);
 	}
-	else {
-		if (priv->commit_mode == IMESS_COMMIT_PARANOID)
-			xdb_tx_commit(xdb);
-	}
+	else
+		xdb_tx_commit(xdb);
 
 out:
 	return ret;
@@ -124,20 +120,16 @@ imess_unlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	if (op_ret == -1)
 		goto out;
 
-	if (priv->commit_mode == IMESS_COMMIT_PARANOID)
-		xdb_tx_begin(xdb);
+	xdb_tx_begin(xdb);
 
 	ret = xdb_remove_file(xdb, &file);
 	if (ret) {
 		gf_log(this->name, GF_LOG_WARNING, "imess_unlink_cbk: "
 				"xdb_remove_file failed");
-		if (priv->commit_mode == IMESS_COMMIT_PARANOID)
-			xdb_tx_abort(xdb);
+		xdb_tx_abort(xdb);
 	}
-	else {
-		if (priv->commit_mode == IMESS_COMMIT_PARANOID)
-			xdb_tx_commit(xdb);
-	}
+	else
+		xdb_tx_commit(xdb);
 
 out:
         IMESS_STACK_UNWIND (unlink, frame, op_ret, op_errno,
@@ -163,20 +155,16 @@ imess_rmdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	if (op_ret == -1)
 		goto out;
 
-	if (priv->commit_mode == IMESS_COMMIT_PARANOID)
-		xdb_tx_begin(xdb);
+	xdb_tx_begin(xdb);
 
 	ret = xdb_remove_file(priv->xdb, &file);
 	if (ret) {
 		gf_log(this->name, GF_LOG_WARNING, "imess_rmdir_cbk: "
 				"xdb_remove_file failed");
-		if (priv->commit_mode == IMESS_COMMIT_PARANOID)
-			xdb_tx_abort(xdb);
+		xdb_tx_abort(xdb);
 	}
-	else {
-		if (priv->commit_mode == IMESS_COMMIT_PARANOID)
-			xdb_tx_commit(xdb);
-	}
+	else
+		xdb_tx_commit(xdb);
 
 out:
         IMESS_STACK_UNWIND (rmdir, frame, op_ret, op_errno,
@@ -263,8 +251,7 @@ imess_writev_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	    && prebuf->ia_blocks == postbuf->ia_blocks)
 		goto pass;
 
-	if (priv->commit_mode == IMESS_COMMIT_PARANOID)
-		xdb_tx_begin(xdb);
+	xdb_tx_begin(xdb);
 
 	/* mtime */
 	if (prebuf->ia_mtime != postbuf->ia_mtime) {
@@ -291,13 +278,10 @@ out:
 	if (ret) {
 		gf_log(this->name, GF_LOG_WARNING,
 			"imess_writev_cbk: %s", xdb->err);
-		if (priv->commit_mode == IMESS_COMMIT_PARANOID)
-			xdb_tx_abort(xdb);
+		xdb_tx_abort(xdb);
 	}
-	else {
-		if (priv->commit_mode == IMESS_COMMIT_PARANOID)
-			xdb_tx_commit(xdb);
-	}
+	else
+		xdb_tx_commit(xdb);
 pass:
 	FREE (cookie);
         IMESS_STACK_UNWIND (writev, frame, op_ret, op_errno, prebuf, postbuf,
@@ -335,10 +319,7 @@ imess_fsync_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	if (datasync)
 		goto out;
 
-	if (priv->commit_mode == IMESS_COMMIT_SYNC) {
-		xdb_tx_commit(priv->xdb);
-		xdb_tx_begin(priv->xdb);
-	}
+	/** TODO: sqlite3_wal_checkpoint_v2 (SQLITE_CHECKPOINT_TRUNCATE) ?? */
 
 out:
 	FREE(cookie);
@@ -584,8 +565,9 @@ init (xlator_t *this)
 {
 	int ret = -1;
 	dict_t *options = NULL;
-	char *commit_mode = NULL;
+	char *opt_str = NULL;
 	imess_priv_t *priv = NULL;
+	int freq = -1;
 
 	GF_VALIDATE_OR_GOTO ("imess", this, out);
 
@@ -607,17 +589,29 @@ init (xlator_t *this)
 	options = this->options;
 
 	GF_OPTION_INIT ("db-path", priv->dbpath, str, out);
-	GF_OPTION_INIT ("commit-mode", commit_mode, str, out);
 	GF_OPTION_INIT ("enable-lookup-cache", priv->lookup_cache, bool, out);
 
-	if (0 == strcmp(commit_mode, "lazy"))
-		priv->commit_mode = IMESS_COMMIT_LAZY;
-	else if (0 == strcmp(commit_mode, "paranoid"))
-		priv->commit_mode = IMESS_COMMIT_PARANOID;
-	else if (0 == strcmp(commit_mode, "dynamic"))
-		priv->commit_mode = IMESS_COMMIT_DYNAMIC;
-	else	/* default (including non-senses) falls back to the sync mode */
-		priv->commit_mode = IMESS_COMMIT_SYNC;
+	priv->chkpt_mode = SQLITE_CHECKPOINT_PASSIVE;
+	GF_OPTION_INIT ("checkpoint-mode", opt_str, str, out);
+	if (opt_str) {
+		if (0 == strcmp(opt_str, "full"))
+			priv->chkpt_mode = SQLITE_CHECKPOINT_FULL;
+		else if (0 == strcmp(opt_str, "restart"))
+			priv->chkpt_mode = SQLITE_CHECKPOINT_TRUNCATE;
+		else if (0 == strcmp(opt_str, "truncate"))
+			priv->chkpt_mode = SQLITE_CHECKPOINT_TRUNCATE;
+		else
+			priv->chkpt_mode = SQLITE_CHECKPOINT_PASSIVE;
+	}
+
+	GF_OPTION_INIT ("checkpoint-frequency", opt_str, str, out);
+	if (opt_str) {
+		if (0 == strcmp(opt_str, "auto"))
+			priv->chkpt_freq = 1000;
+		else
+			freq = atoi(opt_str);
+	}
+	priv->chkpt_freq = freq <= 0 ? 1000 : freq;
 
 	ret = xdb_init (&priv->xdb, priv->dbpath);
 	if (ret) {
@@ -626,12 +620,18 @@ init (xlator_t *this)
 		goto out;
 	}
 
-	if (priv->commit_mode != IMESS_COMMIT_PARANOID)
-		xdb_tx_begin (priv->xdb);
+	ret = xdb_set_autocheckpoint(priv->xdb, freq);
+	if (ret) {
+		gf_log (this->name, GF_LOG_ERROR,
+			"set autocheckpoint failed: %s", priv->xdb->err);
+		goto out;
+	}
 
 	gf_log (this->name, GF_LOG_INFO, "imess initialized. "
-		"(database path: %s, lookup cache: %d, commit mode: %s)",
-		priv->dbpath, priv->lookup_cache, commit_mode);
+		"(database path: %s, lookup cache: %d, "
+		"checkpoint mode: %d, checkpoint freq: %d)",
+		priv->dbpath, priv->lookup_cache,
+		priv->chkpt_mode, priv->chkpt_freq);
 
 out:
 	if (ret < 0) {
@@ -650,9 +650,6 @@ fini (xlator_t *this)
 	imess_priv_t *priv = NULL;
 
 	priv = this->private;
-
-	if (priv->commit_mode == IMESS_COMMIT_PARANOID)
-		xdb_tx_commit (priv->xdb);
 
 	xdb_exit (priv->xdb);
 
@@ -721,8 +718,11 @@ struct volume_options options [] = {
 	{ .key = { "enable-lookup-cache" },
 	  .type = GF_OPTION_TYPE_BOOL,
 	},
-	{ .key = { "commit-mode" },
+	{ .key = { "checkpoint-mode" },
           .type = GF_OPTION_TYPE_STR,
+	},
+	{ .key = { "checkpoint-frequency" },
+	  .type = GF_OPTION_TYPE_STR,
 	},
 	{ .key = { NULL } },
 };

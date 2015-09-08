@@ -21,18 +21,17 @@
 
 #include "xdb.h"
 
-/* recovery mode */
+/* recovery */
 enum {
-	IMESS_COMMIT_LAZY		= 0,	/* no commit until unmount */
-	IMESS_COMMIT_SYNC,			/* only for journal commit */
-	IMESS_COMMIT_PARANOID,			/* crazy, commit all */
-	IMESS_COMMIT_DYNAMIC,			/* dynamic to the load */
+	IMESS_CHKPT_PASSIVE		= 0,
+	IMeSS_CHKPT_FULL,
 };
 
 typedef struct {
 	char          *dbpath;
 	xdb_t         *xdb;
-	int            commit_mode;
+	int            chkpt_mode;
+	int            chkpt_freq;
 	gf_boolean_t   lookup_cache;
 } imess_priv_t;
 

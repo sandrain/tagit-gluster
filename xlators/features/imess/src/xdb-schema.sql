@@ -55,9 +55,10 @@ create table xdb_xdata (
 
 -- upon unlinking the file entry, remove all xdata entries.
 -- keep the xname entries for later (possible) hits.
--- this should be a before trigger, however, using after trigger according to
--- the recommendation of the sqlite documenentation.
-create trigger tr_xdb_xfile_unlink after delete on xdb_xfile
+-- using before trigger would be safe, as long as it doesn't touch the row
+-- which is to be affected.
+-- more at: https://sqlite.org/lang_createtrigger.html
+create trigger tr_xdb_xfile_unlink before delete on xdb_xfile
 	begin
 		delete from xdb_xdata where xdb_xdata.fid = OLD.fid;
 	end;
