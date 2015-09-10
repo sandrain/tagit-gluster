@@ -2743,7 +2743,7 @@ struct xlator_cbks cbks = {
 struct volume_options options[] = {
         {.key = {"changelog"},
          .type = GF_OPTION_TYPE_BOOL,
-         .default_value = "off",
+         .default_value = "on",
          .description = "enable/disable change-logging"
         },
         {.key = {"changelog-brick"},

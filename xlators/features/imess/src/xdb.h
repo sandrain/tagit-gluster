@@ -18,6 +18,25 @@
 #include <stdint.h>
 #include <sqlite3.h>
 
+/*
+ * our strategy is:
+ * we do not maintain any consistency for the main index database, except for
+ * relying on the dirty page syncing of the mmaped database file, performed by
+ * the operating system. in short, for the main index database:
+ *
+ * pragma xdb.mmap_size = 1.5GB
+ * pragma xdb.journal_mode = memory
+ *
+ * each record population will be a transaction which will directly modify the
+ * mmaped database region. the in-memory rollback journal will be created at
+ * the beginning of the transaction, and deleted at the end of the transaction.
+ *
+ * if system crashes, the database file would in an inconsistent status.
+ * luckily, the glusterfs itself maintains the changelog which records all
+ * changed records of the underlying brick. what we have to do is to read and
+ * repopulate the database using this changelog feature.
+ */
+
 struct _xdb {
 	sqlite3    *conn;
 	const char *dbpath;
@@ -193,6 +212,23 @@ int xdb_remove_xattr (xdb_t *xdb, xdb_file_t *file, const char *name);
  */
 int xdb_update_stat (xdb_t *xdb, xdb_file_t *file, struct stat *sb, int att);
 
+/* the checkpoint is not necessary to be provided, since we rely on the
+ * changelog xlator.
+ */
+static inline int xdb_set_autocheckpoint (xdb_t *xdb, int freq)
+{
+	int ret = 0;
+
+	ret = sqlite3_wal_autocheckpoint(xdb->conn, freq);
+	if (ret != SQLITE_OK) {
+		xdb->err = sqlite3_errmsg(xdb->conn);
+		return -1;
+	}
+
+	return 0;
+}
+
+#if 0
 static inline
 int xdb_checkpoint (xdb_t *xdb, int mode, int *pn_log, int *pn_ckpt)
 {
@@ -211,18 +247,6 @@ int xdb_checkpoint (xdb_t *xdb, int mode, int *pn_log, int *pn_ckpt)
 	return ret;
 }
 
-static inline int xdb_set_autocheckpoint (xdb_t *xdb, int freq)
-{
-	int ret = 0;
-
-	ret = sqlite3_wal_autocheckpoint(xdb->conn, freq);
-	if (ret != SQLITE_OK) {
-		xdb->err = sqlite3_errmsg(xdb->conn);
-		return -1;
-	}
-
-	return 0;
-}
 
 static inline int xdb_checkpoint_fast (xdb_t *xdb, int *pn_log, int *pn_ckpt)
 {
@@ -235,6 +259,7 @@ static inline int xdb_checkpoint_full (xdb_t *xdb, int *pn_log, int *pn_ckpt)
 	return xdb_checkpoint (xdb, SQLITE_CHECKPOINT_RESTART,
 				pn_log, pn_ckpt);
 }
+#endif
 
 
 /* for debug */
@@ -242,7 +267,6 @@ int xdb_read_all_xfile (xdb_t *xdb, dict_t *xdata);
 int xdb_read_all_xname (xdb_t *xdb, dict_t *xdata);
 int xdb_read_all_xdata (xdb_t *xdb, dict_t *xdata);
 
-int xdb_get_count (xdb_t *xdb, char *table, uint64_t *count);
 int xdb_direct_query (xdb_t *xdb, char *sql, dict_t *xdata);
 
 #endif	/* _IMESS_XDB_H_ */

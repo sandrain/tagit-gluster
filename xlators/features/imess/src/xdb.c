@@ -42,10 +42,9 @@ enum {
 	INSERT_STAT,		/* [5] */
 	UPDATE_STAT,		/* [6] */
 	GET_FID,		/* [7] */
-	GET_COUNT_XFILE,	/* [8] */
-	GET_ALL_XFILE,		/* [9] */
-	GET_ALL_XNAME,		/* [10] */
-	GET_ALL_XDATA,		/* [11] */
+	GET_ALL_XFILE,		/* [8] */
+	GET_ALL_XNAME,		/* [9] */
+	GET_ALL_XDATA,		/* [10] */
 
 	XDB_N_SQLS,
 };
@@ -90,13 +89,11 @@ static const char *xdb_sqls[XDB_N_SQLS] = {
 	"where fid=(select fid from xdb_xfile where gfid=?) and nid=?\n",
 /* [7] GET_FID (gfid) */
 	"select fid from xdb_xfile where gfid=?",
-/* [8] GET_COUNT_XFILE */
-	"select count(*) from xdb_xfile",
-/* [9] GET_ALL_XFILE */
+/* [8] GET_ALL_XFILE */
 	"select fid,gfid,path,name from xdb_xfile",
-/* [10] GET_ALL_XNAME */
+/* [9] GET_ALL_XNAME */
 	"select nid,name from xdb_xname",
-/* [11] GET_ALL_XDATA */
+/* [10] GET_ALL_XDATA */
 	"select xid,fid,nid,ival,sval from xdb_xdata",
 };
 
@@ -123,13 +120,15 @@ static const char *xdb_sqls[XDB_N_SQLS] = {
  */
 static const char *pragma_str =
 	"PRAGMA mmap_size=1610612736;"		/* max 1.5 GB */
-	"PRAGMA journal_mode=WAL;"
+	"PRAGMA journal_mode=memory;"		/* no physical WAL */
+	"PRAGMA synchronous=0;"			/* offload all to os */
+	"PRAGMA temp_store=2;";			/* memory */
 #if 0
-	"PRAGMA wal_autocheckpoint=0;"
 	"PRAGMA wal_checkpoint(TRUNCATE);"
-#endif
+	"PRAGMA journal_mode=WAL;"
 	"PRAGMA synchronous=1;"			/* normal */
 	"PRAGMA temp_store=2;";			/* memory */
+#endif
 
 static inline int db_configure_pragma(xdb_t *self)
 {
@@ -412,7 +411,7 @@ int xdb_insert_file(xdb_t *self, xdb_file_t *file)
 	ret = sqlite3_bind_text(stmt, 1, file->gfid, -1, SQLITE_STATIC);
 	ret |= sqlite3_bind_text(stmt, 2, file->path, -1, SQLITE_STATIC);
 	ret |= sqlite3_bind_text(stmt, 3, file->path, -1, SQLITE_STATIC);
-	ret = sqlite3_bind_int(stmt, 4, name_substr_pos(file->path));
+	ret |= sqlite3_bind_int(stmt, 4, name_substr_pos(file->path));
 	if (ret) {
 		ret = -EIO;
 		goto out;
@@ -635,40 +634,6 @@ out:
 	if (stmt)
 		sqlite3_finalize(stmt);
 
-	return ret;
-}
-
-int xdb_get_count (xdb_t *xdb, char *table, uint64_t *count)
-{
-	int ret = 0;
-	uint64_t rows = 0;
-	sqlite3_stmt *stmt = NULL;
-
-	__valptr(xdb);
-	__valptr(table);
-	__valptr(count);
-
-	ret = sqlite3_prepare_v2(xdb->conn, xdb_sqls[GET_COUNT_XFILE],
-				 -1, &stmt, 0);
-
-	if (ret != SQLITE_OK) {
-		ret = -EIO;
-		goto out;
-	}
-
-	do {
-		ret = sqlite3_step(stmt);
-	} while (ret == SQLITE_BUSY);
-
-	rows = sqlite3_column_int(stmt, 0);
-
-	/* TODO: errors */
-
-	*count = rows;
-	ret = 0;
-
-out:
-	sqlite3_finalize(stmt);
 	return ret;
 }
 

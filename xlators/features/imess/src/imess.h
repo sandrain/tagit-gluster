@@ -20,19 +20,17 @@
 #include "options.h"
 
 #include "xdb.h"
-
-/* recovery */
-enum {
-	IMESS_CHKPT_PASSIVE		= 0,
-	IMeSS_CHKPT_FULL,
-};
+#include "logger.h"
 
 typedef struct {
 	char          *dbpath;
 	xdb_t         *xdb;
-	int            chkpt_mode;
-	int            chkpt_freq;
-	gf_boolean_t   lookup_cache;
+
+	char          *logpath;
+	logger_t      *logger;
+
+	gf_boolean_t  log_dir_only;
+	gf_boolean_t  lookup_cache;
 } imess_priv_t;
 
 #define IMESS_STACK_UNWIND(op, frame, params ...)                       \

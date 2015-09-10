@@ -3,7 +3,7 @@ xlatordir = $(libdir)/glusterfs/$(PACKAGE_VERSION)/xlator/features
 
 imess_la_LDFLAGS = -module -avoid-version
 
-imess_la_SOURCES = imess.c xdb.c
+imess_la_SOURCES = imess.c xdb.c logger.c
 
 nodist_imess_la_SOURCES = xdb-schema.c
 
@@ -12,7 +12,7 @@ BUILT_SOURCES = xdb-schema.c
 imess_la_LIBADD = $(top_builddir)/libglusterfs/src/libglusterfs.la \
 		  $(SQLITE_LIBS)
 
-noinst_HEADERS = imess.h imess-mem-types.h xdb.h
+noinst_HEADERS = imess.h imess-mem-types.h xdb.h logger.h
 
 AM_CPPFLAGS = $(GF_CPPFLAGS) -I$(top_srcdir)/libglusterfs/src
 

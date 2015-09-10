@@ -90,6 +90,12 @@ imess_mkdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	if (op_ret == -1)
 		goto out;
 
+	ret = logger_sync (priv->logger);
+	if (ret) {
+		gf_log (this->name, GF_LOG_WARN, "logger_sync failed (%d: %s)",
+			ret, strerror (ret));
+	}
+
 	ret = put_stat_attr(priv, buf, (const char *) cookie);
 	if (ret)
 		gf_log(this->name, GF_LOG_ERROR, "imess_mkdir_cbk: "
@@ -187,6 +193,15 @@ imess_create_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	if (op_ret == -1)
 		goto out;
 
+	if (!priv->log_dir_only) {
+		ret = logger_sync (priv->logger);
+		if (ret) {
+			gf_log (this->name, GF_LOG_WARN,
+				"logger_sync failed (%d: %s)",
+				ret, strerror (ret));
+		}
+	}
+
 	ret = put_stat_attr(priv, buf, (const char *) cookie);
 	if (ret)
 		gf_log(this->name, GF_LOG_ERROR, "imess_create_cbk: "
@@ -213,6 +228,15 @@ imess_symlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 
 	if (op_ret == -1)
 		goto out;
+
+	if (!priv->log_dir_only) {
+		ret = logger_sync (priv->logger);
+		if (ret) {
+			gf_log (this->name, GF_LOG_WARN,
+				"logger_sync failed (%d: %s)",
+				ret, strerror (ret));
+		}
+	}
 
 	ret = put_stat_attr(priv, buf, (const char *) cookie);
 	if (ret)
@@ -353,9 +377,21 @@ int
 imess_mkdir (call_frame_t *frame, xlator_t *this, loc_t *loc, mode_t mode,
              mode_t umask, dict_t *xdata)
 {
+	int ret = 0;
 	void *cookie = NULL;
+	imess_priv_t *priv = NULL;
+	logger_t *logger = NULL;
+
+	priv = this->private;
+	logger = priv->logger;
 
 	cookie = gf_strdup(loc->path);
+
+	ret = logger_append(logger, loc->path);
+	if (ret) {
+		gf_log (this->name, GF_LOG_WARN, "logger failed (%d: %s) ",
+				ret, strerror(errno));
+	}
 
 	STACK_WIND_COOKIE (frame, imess_mkdir_cbk, cookie,
 		           FIRST_CHILD(this), FIRST_CHILD(this)->fops->mkdir,
@@ -399,9 +435,24 @@ imess_create (call_frame_t *frame, xlator_t *this, loc_t *loc,
               dict_t *xdata)
 {
 	void *cookie = NULL;
+	imess_priv_t *priv = NULL;
+	logger_t *logger = NULL;
+
+	priv = this->private;
 
 	cookie = gf_strdup(loc->path);
 
+	if (priv->log_dir_only)
+		goto wind;
+
+	logger = priv->logger;
+	ret = logger_append(logger, loc->path);
+	if (ret) {
+		gf_log (this->name, GF_LOG_WARN, "logger failed (%d: %s) ",
+				ret, strerror(errno));
+	}
+
+wind:
         STACK_WIND_COOKIE (frame, imess_create_cbk, cookie,
 			   FIRST_CHILD(this), FIRST_CHILD(this)->fops->create,
 			   loc, flags, mode, umask, fd, xdata);
@@ -413,9 +464,24 @@ imess_symlink (call_frame_t *frame, xlator_t *this, const char *linkpath,
                loc_t *loc, mode_t umask, dict_t *xdata)
 {
 	void *cookie = NULL;
+	imess_priv_t *priv = NULL;
+	logger_t *logger = NULL;
+
+	priv = this->private;
 
 	cookie = gf_strdup(loc->path);
 
+	if (priv->log_dir_only)
+		goto wind;
+
+	logger = priv->logger;
+	ret = logger_append(logger, loc->path);
+	if (ret) {
+		gf_log (this->name, GF_LOG_WARN, "logger failed (%d: %s) ",
+				ret, strerror(errno));
+	}
+
+wind:
         STACK_WIND_COOKIE (frame, imess_symlink_cbk, cookie,
 			   FIRST_CHILD(this), FIRST_CHILD(this)->fops->symlink,
 			   linkpath, loc, umask, xdata);
@@ -565,9 +631,7 @@ init (xlator_t *this)
 {
 	int ret = -1;
 	dict_t *options = NULL;
-	char *opt_str = NULL;
 	imess_priv_t *priv = NULL;
-	int freq = -1;
 
 	GF_VALIDATE_OR_GOTO ("imess", this, out);
 
@@ -591,28 +655,6 @@ init (xlator_t *this)
 	GF_OPTION_INIT ("db-path", priv->dbpath, str, out);
 	GF_OPTION_INIT ("enable-lookup-cache", priv->lookup_cache, bool, out);
 
-	priv->chkpt_mode = SQLITE_CHECKPOINT_PASSIVE;
-	GF_OPTION_INIT ("checkpoint-mode", opt_str, str, out);
-	if (opt_str) {
-		if (0 == strcmp(opt_str, "full"))
-			priv->chkpt_mode = SQLITE_CHECKPOINT_FULL;
-		else if (0 == strcmp(opt_str, "restart"))
-			priv->chkpt_mode = SQLITE_CHECKPOINT_TRUNCATE;
-		else if (0 == strcmp(opt_str, "truncate"))
-			priv->chkpt_mode = SQLITE_CHECKPOINT_TRUNCATE;
-		else
-			priv->chkpt_mode = SQLITE_CHECKPOINT_PASSIVE;
-	}
-
-	GF_OPTION_INIT ("checkpoint-frequency", opt_str, str, out);
-	if (opt_str) {
-		if (0 == strcmp(opt_str, "auto"))
-			priv->chkpt_freq = 1000;
-		else
-			freq = atoi(opt_str);
-	}
-	priv->chkpt_freq = freq <= 0 ? 1000 : freq;
-
 	ret = xdb_init (&priv->xdb, priv->dbpath);
 	if (ret) {
 		gf_log (this->name, GF_LOG_ERROR,
@@ -620,23 +662,27 @@ init (xlator_t *this)
 		goto out;
 	}
 
-	ret = xdb_set_autocheckpoint(priv->xdb, freq);
+	GF_OPTION_INIT ("log-path", priv->logpath, str, out);
+	GF_OPTION_INIT ("log-dir-only", priv->log_dir_only, bool, out);
+
+	ret = logger_init (&priv->logger, priv->logpath);
 	if (ret) {
 		gf_log (this->name, GF_LOG_ERROR,
-			"set autocheckpoint failed: %s", priv->xdb->err);
+			"logger initialization failed: (%d).", ret);
 		goto out;
 	}
 
 	gf_log (this->name, GF_LOG_INFO, "imess initialized. "
-		"(database path: %s, lookup cache: %d, "
-		"checkpoint mode: %d, checkpoint freq: %d)",
-		priv->dbpath, priv->lookup_cache,
-		priv->chkpt_mode, priv->chkpt_freq);
+			"(database path: %s, log path: %s, log-dir-only: %b, "
+	                "lookup cache: %d)",
+			priv->dbpath, priv->logpath, priv->log_dir_only,
+			priv->lookup_cache);
 
 out:
 	if (ret < 0) {
-		if (priv)
+		if (priv) {
 			GF_FREE (priv);
+		}
 	}
 
 	this->private = priv;
@@ -651,9 +697,12 @@ fini (xlator_t *this)
 
 	priv = this->private;
 
-	xdb_exit (priv->xdb);
+	if (priv) {
+		logger_exit (priv->logger);
+		xdb_exit (priv->xdb);
 
-	GF_FREE (priv);
+		GF_FREE (priv);
+	}
 
 	return;
 }
@@ -715,14 +764,14 @@ struct volume_options options [] = {
 	{ .key = { "db-path" },
 	  .type = GF_OPTION_TYPE_PATH,
 	},
+	{ .key = { "log-path" },
+	  .type = GF_OPTION_TYPE_PATH,
+	},
+	{ .key = { "log-dir-only" },
+	  .type = GF_OPTION_TYPE_bool,
+	},
 	{ .key = { "enable-lookup-cache" },
 	  .type = GF_OPTION_TYPE_BOOL,
-	},
-	{ .key = { "checkpoint-mode" },
-          .type = GF_OPTION_TYPE_STR,
-	},
-	{ .key = { "checkpoint-frequency" },
-	  .type = GF_OPTION_TYPE_STR,
 	},
 	{ .key = { NULL } },
 };
