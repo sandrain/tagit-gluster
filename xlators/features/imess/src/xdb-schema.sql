@@ -45,7 +45,7 @@ create index ix_xdb_xname_name on xdb_xname (name);
 create table xdb_xdata (
 	xid	integer not null,
 	fid	integer not null references xdb_xfile (fid),
-	nid	integer not null references xdb_attr (nid),
+	nid	integer not null references xdb_xname (nid),
 	ival	integer,
 	sval	text,
 
