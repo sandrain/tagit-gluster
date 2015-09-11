@@ -123,12 +123,6 @@ static const char *pragma_str =
 	"PRAGMA journal_mode=memory;"		/* no physical WAL */
 	"PRAGMA synchronous=0;"			/* offload all to os */
 	"PRAGMA temp_store=2;";			/* memory */
-#if 0
-	"PRAGMA wal_checkpoint(TRUNCATE);"
-	"PRAGMA journal_mode=WAL;"
-	"PRAGMA synchronous=1;"			/* normal */
-	"PRAGMA temp_store=2;";			/* memory */
-#endif
 
 static inline int db_configure_pragma(xdb_t *self)
 {
@@ -338,7 +332,7 @@ int xdb_init (/* out */ xdb_t **xdb, const char *path)
 	sqlite3 *conn = NULL;
 	xdb_t *self = NULL;
 
-	self = calloc(1, sizeof(*self) + sizeof(sqlite3_stmt*)*XDB_N_SQLS);
+	self = calloc(1, sizeof(*self));
 	if (!self)
 		return -ENOMEM;
 
@@ -404,7 +398,7 @@ int xdb_insert_file(xdb_t *self, xdb_file_t *file)
 
 	ret = sqlite3_prepare_v2(self->conn, xdb_sqls[INSERT_FILE], -1, &stmt, 0);
 	if (ret) {
-		ret = -EIO;
+		ret = -1;
 		goto out;
 	}
 
@@ -413,7 +407,7 @@ int xdb_insert_file(xdb_t *self, xdb_file_t *file)
 	ret |= sqlite3_bind_text(stmt, 3, file->path, -1, SQLITE_STATIC);
 	ret |= sqlite3_bind_int(stmt, 4, name_substr_pos(file->path));
 	if (ret) {
-		ret = -EIO;
+		ret = -1;
 		goto out;
 	}
 
@@ -421,7 +415,7 @@ int xdb_insert_file(xdb_t *self, xdb_file_t *file)
 		ret = sqlite3_step(stmt);
 	} while (ret == SQLITE_BUSY);
 
-	ret = ret == SQLITE_DONE ? 0 : -EIO;
+	ret = ret == SQLITE_DONE ? 0 : -1;
 
 out:
 	if (ret)
@@ -443,12 +437,14 @@ int xdb_remove_file (xdb_t *xdb, xdb_file_t *file)
 
 	ret = sqlite3_prepare_v2(xdb->conn, xdb_sqls[REMOVE_FILE], -1,
 				&stmt, NULL);
-	if (ret != SQLITE_OK)
-		return -EIO;
+	if (ret != SQLITE_OK) {
+		ret = -1;
+		goto out;
+	}
 
 	ret = sqlite3_bind_text(stmt, 1, file->gfid, -1, SQLITE_STATIC);
 	if (ret) {
-		ret = -EIO;
+		ret = -1;
 		goto out;
 	}
 
@@ -456,10 +452,7 @@ int xdb_remove_file (xdb_t *xdb, xdb_file_t *file)
 		ret = sqlite3_step(stmt);
 	} while (ret == SQLITE_BUSY);
 
-	if (ret != SQLITE_DONE)
-		ret = -EIO;
-	else
-		ret = 0;
+	ret = ret == SQLITE_DONE ? 0 : -1;
 
 out:
 	if (ret)
@@ -481,7 +474,7 @@ int xdb_insert_stat (xdb_t *xdb, xdb_file_t *file, struct stat *stat)
 
 	ret = sqlite3_prepare_v2(xdb->conn, xdb_sqls[INSERT_STAT], -1, &stmt, 0);
 	if (ret) {
-		ret = -EIO;
+		ret = -1;
 		goto out;
 	}
 
@@ -497,9 +490,9 @@ int xdb_insert_stat (xdb_t *xdb, xdb_file_t *file, struct stat *stat)
 		ret = sqlite3_step(stmt);
 	} while (ret == SQLITE_BUSY);
 
-	ret = ret == SQLITE_DONE ? 0 : -EIO;
+	ret = ret == SQLITE_DONE ? 0 : -1;
 out:
-	if (ret == -EIO)
+	if (ret)
 		xdb->err = sqlite3_errmsg(xdb->conn);
 
 	sqlite3_finalize(stmt);
@@ -561,8 +554,10 @@ int xdb_insert_xattr(xdb_t *self, xdb_file_t *file, xdb_attr_t *attr,
 	ret = 0;
 
 out:
-	if (ret)
+	if (ret) {
 		self->err = sqlite3_errmsg(self->conn);
+		ret = -1;
+	}
 	if (stmt)
 		sqlite3_finalize(stmt);
 
@@ -629,7 +624,7 @@ int xdb_update_stat (xdb_t *self, xdb_file_t *file, struct stat *sb, int att)
 out:
 	if (ret) {
 		self->err = sqlite3_errmsg(self->conn);
-		ret = -EIO;
+		ret = -1;
 	}
 	if (stmt)
 		sqlite3_finalize(stmt);
@@ -800,7 +795,6 @@ int direct_query_callback (void *cdata, int argc, char **argv, char **colname)
 	}
 
 	ret = dict_set_dynstr_with_alloc (xdata, keybuf, buf);
-
 	if (ret)
 		return ret;
 
@@ -823,7 +817,7 @@ int xdb_direct_query (xdb_t *xdb, char *sql, dict_t *xdata)
 	ret = sqlite3_exec(xdb->conn, sql, &direct_query_callback, &cdata,
 			   (char **) &xdb->err);
 	if (ret)
-		return -EIO;
+		return -1;
 
 	ret = dict_set_uint64 (xdata, "count", cdata.rows);
 

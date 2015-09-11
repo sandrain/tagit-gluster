@@ -37,9 +37,10 @@ put_stat_attr(imess_priv_t *priv, struct iatt *buf, const char *path)
 	if (path) {
 		ret = xdb_insert_file(xdb, &file);
 		if (ret) {
-			gf_log("imess", GF_LOG_ERROR,
+			gf_log("imess", GF_LOG_WARNING,
 			       "put_stat_attr: xdb_insert_file failed (%s, %s)",
 			       path, xdb->err);
+			xdb_tx_abort(xdb);
 			goto out;
 		}
 	}
@@ -48,7 +49,7 @@ put_stat_attr(imess_priv_t *priv, struct iatt *buf, const char *path)
 
 	ret = xdb_insert_stat(xdb, &file, &sb);
 	if (ret) {
-		gf_log("imess", GF_LOG_ERROR,
+		gf_log("imess", GF_LOG_WARNING,
 		       "put_stat_attr: xdb_insert_stat failed (%s)",
 		       xdb->err);
 		xdb_tx_abort(xdb);
@@ -90,15 +91,18 @@ imess_mkdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	if (op_ret == -1)
 		goto out;
 
+#if 0
 	ret = logger_sync (priv->logger);
 	if (ret) {
-		gf_log (this->name, GF_LOG_WARN, "logger_sync failed (%d: %s)",
+		gf_log (this->name, GF_LOG_WARNING,
+			"logger_sync failed (%d: %s)",
 			ret, strerror (ret));
 	}
+#endif
 
 	ret = put_stat_attr(priv, buf, (const char *) cookie);
 	if (ret)
-		gf_log(this->name, GF_LOG_ERROR, "imess_mkdir_cbk: "
+		gf_log(this->name, GF_LOG_WARNING, "imess_mkdir_cbk: "
 				"xdb_insert_stat failed");
 
 out:
@@ -193,18 +197,20 @@ imess_create_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	if (op_ret == -1)
 		goto out;
 
+#if 0
 	if (!priv->log_dir_only) {
 		ret = logger_sync (priv->logger);
 		if (ret) {
-			gf_log (this->name, GF_LOG_WARN,
+			gf_log (this->name, GF_LOG_WARNING,
 				"logger_sync failed (%d: %s)",
 				ret, strerror (ret));
 		}
 	}
+#endif
 
 	ret = put_stat_attr(priv, buf, (const char *) cookie);
 	if (ret)
-		gf_log(this->name, GF_LOG_ERROR, "imess_create_cbk: "
+		gf_log(this->name, GF_LOG_WARNING, "imess_create_cbk: "
 				"xdb_insert_stat failed");
 
 out:
@@ -229,18 +235,20 @@ imess_symlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	if (op_ret == -1)
 		goto out;
 
+#if 0
 	if (!priv->log_dir_only) {
 		ret = logger_sync (priv->logger);
 		if (ret) {
-			gf_log (this->name, GF_LOG_WARN,
+			gf_log (this->name, GF_LOG_WARNING,
 				"logger_sync failed (%d: %s)",
 				ret, strerror (ret));
 		}
 	}
+#endif
 
 	ret = put_stat_attr(priv, buf, (const char *) cookie);
 	if (ret)
-		gf_log(this->name, GF_LOG_ERROR, "imess_symlink_cbk: "
+		gf_log(this->name, GF_LOG_WARNING, "imess_symlink_cbk: "
 				"xdb_insert_stat failed");
 
 out:
@@ -307,7 +315,6 @@ out:
 	else
 		xdb_tx_commit(xdb);
 pass:
-	FREE (cookie);
         IMESS_STACK_UNWIND (writev, frame, op_ret, op_errno, prebuf, postbuf,
                             xdata);
         return 0;
@@ -380,18 +387,20 @@ imess_mkdir (call_frame_t *frame, xlator_t *this, loc_t *loc, mode_t mode,
 	int ret = 0;
 	void *cookie = NULL;
 	imess_priv_t *priv = NULL;
-	logger_t *logger = NULL;
+	//logger_t *logger = NULL;
 
 	priv = this->private;
-	logger = priv->logger;
+	//logger = priv->logger;
 
 	cookie = gf_strdup(loc->path);
 
+#if 0
 	ret = logger_append(logger, loc->path);
 	if (ret) {
-		gf_log (this->name, GF_LOG_WARN, "logger failed (%d: %s) ",
+		gf_log (this->name, GF_LOG_WARNING, "logger failed (%d: %s) ",
 				ret, strerror(errno));
 	}
+#endif
 
 	STACK_WIND_COOKIE (frame, imess_mkdir_cbk, cookie,
 		           FIRST_CHILD(this), FIRST_CHILD(this)->fops->mkdir,
@@ -434,23 +443,26 @@ imess_create (call_frame_t *frame, xlator_t *this, loc_t *loc,
               int32_t flags, mode_t mode, mode_t umask, fd_t *fd,
               dict_t *xdata)
 {
+	int ret = 0;
 	void *cookie = NULL;
 	imess_priv_t *priv = NULL;
-	logger_t *logger = NULL;
+	//logger_t *logger = NULL;
 
 	priv = this->private;
 
 	cookie = gf_strdup(loc->path);
 
+#if 0
 	if (priv->log_dir_only)
 		goto wind;
 
 	logger = priv->logger;
 	ret = logger_append(logger, loc->path);
 	if (ret) {
-		gf_log (this->name, GF_LOG_WARN, "logger failed (%d: %s) ",
+		gf_log (this->name, GF_LOG_WARNING, "logger failed (%d: %s) ",
 				ret, strerror(errno));
 	}
+#endif
 
 wind:
         STACK_WIND_COOKIE (frame, imess_create_cbk, cookie,
@@ -463,9 +475,10 @@ int
 imess_symlink (call_frame_t *frame, xlator_t *this, const char *linkpath,
                loc_t *loc, mode_t umask, dict_t *xdata)
 {
+	int ret = 0;
 	void *cookie = NULL;
 	imess_priv_t *priv = NULL;
-	logger_t *logger = NULL;
+	//logger_t *logger = NULL;
 
 	priv = this->private;
 
@@ -474,12 +487,14 @@ imess_symlink (call_frame_t *frame, xlator_t *this, const char *linkpath,
 	if (priv->log_dir_only)
 		goto wind;
 
+#if 0
 	logger = priv->logger;
 	ret = logger_append(logger, loc->path);
 	if (ret) {
-		gf_log (this->name, GF_LOG_WARN, "logger failed (%d: %s) ",
+		gf_log (this->name, GF_LOG_WARNING, "logger failed (%d: %s) ",
 				ret, strerror(errno));
 	}
+#endif
 
 wind:
         STACK_WIND_COOKIE (frame, imess_symlink_cbk, cookie,
@@ -662,18 +677,21 @@ init (xlator_t *this)
 		goto out;
 	}
 
+#if 0
 	GF_OPTION_INIT ("log-path", priv->logpath, str, out);
 	GF_OPTION_INIT ("log-dir-only", priv->log_dir_only, bool, out);
 
-	ret = logger_init (&priv->logger, priv->logpath);
+	ret = logger_init (&priv->logger, priv->logpath, LOGGER_SYNC_MANUAL);
 	if (ret) {
 		gf_log (this->name, GF_LOG_ERROR,
-			"logger initialization failed: (%d).", ret);
+			"logger initialization failed: (%d, %s).",
+			ret, priv->logpath);
 		goto out;
 	}
+#endif
 
 	gf_log (this->name, GF_LOG_INFO, "imess initialized. "
-			"(database path: %s, log path: %s, log-dir-only: %b, "
+			"(database path: %s, log path: %s, log-dir-only: %d, "
 	                "lookup cache: %d)",
 			priv->dbpath, priv->logpath, priv->log_dir_only,
 			priv->lookup_cache);
@@ -698,7 +716,7 @@ fini (xlator_t *this)
 	priv = this->private;
 
 	if (priv) {
-		logger_exit (priv->logger);
+		//logger_exit (priv->logger);
 		xdb_exit (priv->xdb);
 
 		GF_FREE (priv);
@@ -768,10 +786,12 @@ struct volume_options options [] = {
 	  .type = GF_OPTION_TYPE_PATH,
 	},
 	{ .key = { "log-dir-only" },
-	  .type = GF_OPTION_TYPE_bool,
+	  .type = GF_OPTION_TYPE_BOOL,
+	  .default_value = "off",
 	},
 	{ .key = { "enable-lookup-cache" },
 	  .type = GF_OPTION_TYPE_BOOL,
+	  .default_value = "off",
 	},
 	{ .key = { NULL } },
 };

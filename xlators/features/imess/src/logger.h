@@ -26,8 +26,10 @@ struct _logger {
 	uint64_t    sync_count;
 	pthread_t   syncer;
 
-	pthread_spin_lock_t lock;
+	pthread_spinlock_t lock;
 };
+
+typedef struct _logger logger_t;
 
 enum {
 	LOGGER_SYNC_MANUAL	= 0,
@@ -36,16 +38,22 @@ enum {
 	LOGGER_SYNC_TIMER,
 };
 
-typedef _logger logger_t;
+/* APIs */
 
 int logger_init (logger_t **logger, const char *path,
 		       int sync_mode);
 
 int logger_exit (logger_t *logger);
 
-int logger_append (logger_t *logger, const char *path);
+static inline int logger_append (logger_t *logger, const char *path)
+{
+	return 0;
+}
 
-int logger_sync (logger_t *logger);
+static inline int logger_sync (logger_t *logger)
+{
+	return 0;
+}
 
 #endif	/* _IMESS_LOGGER_H */
 
