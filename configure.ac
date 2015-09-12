@@ -167,8 +167,10 @@ AC_CONFIG_FILES([Makefile
                 xlators/features/bit-rot/src/Makefile
                 xlators/features/bit-rot/src/stub/Makefile
                 xlators/features/bit-rot/src/bitd/Makefile
-		xlators/features/imess/Makefile
-		xlators/features/imess/src/Makefile
+		xlators/features/imess-client/Makefile
+		xlators/features/imess-client/src/Makefile
+		xlators/features/imess-server/Makefile
+		xlators/features/imess-server/src/Makefile
                 xlators/playground/Makefile
                 xlators/playground/template/Makefile
                 xlators/playground/template/src/Makefile
@@ -614,8 +616,7 @@ fi
 # IMESS section
 
 AC_ARG_ENABLE([imess],
-		AC_HELP_STRING([--enable-imess],
-			[Build iMess translator]),
+		AC_HELP_STRING([--enable-imess], [Build iMess translator]),
 		[],
 		[enable_imess=no])
 

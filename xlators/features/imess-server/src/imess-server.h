@@ -4,40 +4,36 @@
  * ---------------------------------------------------------------------------
  * 
  */
-#ifndef _IMESS_H_
-#define	_IMESS_H_
+#ifndef _IMESS_SERVER_H_
+#define	_IMESS_SERVER_H_
 
 #ifndef _CONFIG_H
 #define _CONFIG_H
 #include "config.h"
 #endif
 
-#include "imess-mem-types.h"
 #include "glusterfs.h"
 #include "xlator.h"
 #include "common-utils.h"
 #include "logging.h"
 #include "options.h"
+#include "dict.h"
 
-#include "xdb.h"
-#include "logger.h"
+#include "imess-server-mem-types.h"
+#include "imess-server-xdb.h"
 
-typedef struct {
-	char          *dbpath;
-	xdb_t         *xdb;
+struct _ims_priv {
+	char          *db_path;
 
-	char          *logpath;
-	logger_t      *logger;
-
-	gf_boolean_t  log_dir_only;
 	gf_boolean_t  lookup_cache;
-} imess_priv_t;
+};
 
-#define IMESS_STACK_UNWIND(op, frame, params ...)                       \
+typedef struct _ims_priv ims_priv_t;
+
+#define IMS_STACK_UNWIND(op, frame, params ...)                         \
         do {                                                            \
                 frame->local = NULL;                                    \
                 STACK_UNWIND_STRICT (op, frame, params);                \
         } while (0);
 
-#endif	/* _IMESS_H_ */
-
+#endif	/* _IMESS_SERVER_H_ */
