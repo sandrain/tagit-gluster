@@ -375,6 +375,8 @@ imess_sql_result_fill (xlator_t *this, inode_t *file, strfd_t *strfd)
 
 	xl = this->children->xlator;
 
+        op = IMESS_IPC_OP;
+
 	xdin = dict_new ();
 	ret = dict_set_str (xdin, "clients", "all");
 	ret = dict_set_str (xdin, "sql", sql);

@@ -24,16 +24,15 @@
 
 struct _ims_priv {
 	char          *db_path;
+	ims_xdb_t     *xdb;
 
 	gf_boolean_t  lookup_cache;
 };
 
 typedef struct _ims_priv ims_priv_t;
 
-#define IMS_STACK_UNWIND(op, frame, params ...)                         \
-        do {                                                            \
-                frame->local = NULL;                                    \
-                STACK_UNWIND_STRICT (op, frame, params);                \
-        } while (0);
+/*
+ * operation code for ipc. the actual command comes as string in xdata
+ */
 
 #endif	/* _IMESS_SERVER_H_ */
