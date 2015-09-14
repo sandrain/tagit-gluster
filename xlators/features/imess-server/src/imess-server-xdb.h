@@ -53,6 +53,7 @@ typedef struct _ims_xdb	ims_xdb_t;
 struct _ims_xdb_file {
 	const char *gfid;
 	const char *path;
+	void       *extra;
 };
 
 typedef struct _ims_xdb_file ims_xdb_file_t;
@@ -126,15 +127,23 @@ int ims_xdb_exit (ims_xdb_t *xdb);
  * API: file-index operations
  */
 
+int ims_xdb_insert_gfid (ims_xdb_t *xdb, ims_xdb_file_t *file);
+
 int ims_xdb_insert_file (ims_xdb_t *xdb, ims_xdb_file_t *file);
 
 int ims_xdb_remove_file (ims_xdb_t *xdb, ims_xdb_file_t *file);
+
+int ims_xdb_link_file (ims_xdb_t *xdb, ims_xdb_file_t *file);
+
+int ims_xdb_unlink_file (ims_xdb_t *xdb, ims_xdb_file_t *file);
 
 int ims_xdb_insert_stat (ims_xdb_t *xdb, ims_xdb_file_t *file,
                          struct stat *sb);
 
 int ims_xdb_update_stat (ims_xdb_t *xdb, ims_xdb_file_t *file,
                          struct stat *sb, int attr);
+
+int ims_xdb_rename (ims_xdb_t *xdb, ims_xdb_file_t *file);
 
 int ims_xdb_insert_xattr (ims_xdb_t *xdb, ims_xdb_file_t *file,
                           ims_xdb_attr_t *attr, uint64_t n_attr);

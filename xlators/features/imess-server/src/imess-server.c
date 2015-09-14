@@ -22,8 +22,8 @@
  * helper functions
  */
 
-static inline int
-populate_xdb (ims_priv_t *priv, struct iatt *buf, const char *path)
+static int
+insert_new_xdb_entry (ims_priv_t *priv, struct iatt *buf, const char *path)
 {
         int ret              = 0;
         ims_xdb_t *xdb       = NULL;
@@ -36,6 +36,10 @@ populate_xdb (ims_priv_t *priv, struct iatt *buf, const char *path)
         file.path = path;
 
         ims_xdb_tx_begin (xdb);
+
+        ret = ims_xdb_insert_gfid (xdb, &file);
+        if (ret)
+                goto out;
 
         ret = ims_xdb_insert_file (xdb, &file);
         if (ret)
@@ -55,23 +59,16 @@ out:
 }
 
 static inline int
-remove_from_xdb (ims_priv_t *priv, void *gfid)
+unlink_from_xdb (ims_priv_t *priv, const char *path)
 {
         int ret             = 0;
         ims_xdb_t *xdb      = NULL;
         ims_xdb_file_t file = { 0, };
 
         xdb = priv->xdb;
-        file.gfid = gfid;
+        file.path = path;
 
-        ims_xdb_tx_begin (xdb);
-
-        ret = ims_xdb_remove_file (xdb, &file);
-        if (ret)
-                ims_xdb_tx_rollback (xdb);
-        else
-                ims_xdb_tx_commit (xdb);
-
+        ret = ims_xdb_unlink_file (xdb, &file);
         return ret;
 }
 
@@ -97,7 +94,7 @@ ims_mkdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
                 goto out;
 
         priv = this->private;
-        ret = populate_xdb (priv, buf, (const char *) cookie);
+        ret = insert_new_xdb_entry (priv, buf, (const char *) cookie);
         if (ret)
                 gf_log (this->name, GF_LOG_WARNING,
                         "ims_mkdir_cbk: populate_xdb failed "
@@ -124,8 +121,7 @@ ims_mkdir (call_frame_t *frame, xlator_t *this, loc_t *loc, mode_t mode,
 /*
  * unlink
  */
-
-int
+int32_t
 ims_unlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
                   int32_t op_ret, int32_t op_errno,
                   struct iatt *preparent, struct iatt *postparent,
@@ -139,7 +135,7 @@ ims_unlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 
         priv = this->private;
 
-        ret = remove_from_xdb (priv, cookie);
+        ret = unlink_from_xdb (priv, cookie);
         if (ret)
                 gf_log (this->name, GF_LOG_WARNING,
                         "ims_unlink_cbk: xdb_remove_file failed "
@@ -152,15 +148,11 @@ out:
         return 0;
 }
 
-int
+int32_t
 ims_unlink (call_frame_t *frame, xlator_t *this, loc_t *loc, int xflag,
             dict_t *xdata)
 {
-        void *cookie = NULL;
-
-        cookie = uuid_utoa (loc->inode->gfid);
-
-        STACK_WIND_COOKIE (frame, ims_unlink_cbk, cookie,
+        STACK_WIND_COOKIE (frame, ims_unlink_cbk, (void *) loc->path,
                            FIRST_CHILD (this),
                            FIRST_CHILD (this)->fops->unlink,
                            loc, xflag, xdata);
@@ -169,13 +161,15 @@ ims_unlink (call_frame_t *frame, xlator_t *this, loc_t *loc, int xflag,
 
 /*
  * rmdir
+ *
+ * for directories, no hardlinks.
  */
 
-int
+int32_t
 ims_rmdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
-                 int32_t op_ret, int32_t op_errno,
-                 struct iatt *preparent, struct iatt *postparent,
-                 dict_t *xdata)
+               int32_t op_ret, int32_t op_errno,
+               struct iatt *preparent, struct iatt *postparent,
+               dict_t *xdata)
 {
         int ret             = 0;
         ims_priv_t *priv    = NULL;
@@ -184,7 +178,7 @@ ims_rmdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
                 goto out;
 
         priv = this->private;
-        ret = remove_from_xdb (priv, cookie);
+        ret = unlink_from_xdb (priv, cookie);
         if (ret)
                 gf_log (this->name, GF_LOG_WARNING,
                         "ims_rmdir_cbk: xdb_remove_file failed "
@@ -197,15 +191,11 @@ out:
         return 0;
 }
 
-int
+int32_t
 ims_rmdir (call_frame_t *frame, xlator_t *this, loc_t *loc, int flags,
-             dict_t *xdata)
+           dict_t *xdata)
 {
-        void *cookie = NULL;
-
-        cookie = uuid_utoa (loc->inode->gfid);
-
-        STACK_WIND_COOKIE (frame, ims_rmdir_cbk, cookie,
+        STACK_WIND_COOKIE (frame, ims_rmdir_cbk, (void *) loc->path,
                            FIRST_CHILD(this),
                            FIRST_CHILD(this)->fops->rmdir,
                            loc, flags, xdata);
@@ -354,7 +344,7 @@ ims_setxattr (call_frame_t *frame, xlator_t *this,
  * create
  */
 
-int
+int32_t
 ims_create_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
                 int32_t op_ret, int32_t op_errno,
                 fd_t *fd, inode_t *inode, struct iatt *buf,
@@ -369,7 +359,7 @@ ims_create_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 
         priv = this->private;
 
-        ret = populate_xdb (priv, buf, (const char *) cookie);
+        ret = insert_new_xdb_entry (priv, buf, (const char *) cookie);
         if (ret)
                 gf_log (this->name, GF_LOG_WARNING,
                         "ims_create_cbk: populate_xdb failed "
@@ -382,7 +372,7 @@ out:
         return 0;
 }
 
-int
+int32_t
 ims_create (call_frame_t *frame, xlator_t *this, loc_t *loc, int32_t flags,
             mode_t mode, mode_t umask, fd_t *fd, dict_t *xdata)
 {
@@ -397,7 +387,7 @@ ims_create (call_frame_t *frame, xlator_t *this, loc_t *loc, int32_t flags,
  * symlink
  */
 
-int
+int32_t
 ims_symlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
                    int32_t op_ret, int32_t op_errno,
                    inode_t *inode, struct iatt *buf,
@@ -412,7 +402,7 @@ ims_symlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 
         priv = this->private;
 
-        ret = populate_xdb (priv, buf, (const char *) cookie);
+        ret = insert_new_xdb_entry (priv, buf, (const char *) cookie);
         if (ret)
                 gf_log (this->name, GF_LOG_WARNING,
                         "ims_symlink_cbk: populate_xdb failed "
@@ -426,7 +416,7 @@ out:
 }
 
 
-int
+int32_t
 ims_symlink (call_frame_t *frame, xlator_t *this, const char *linkpath,
                loc_t *loc, mode_t umask, dict_t *xdata)
 {
@@ -434,6 +424,131 @@ ims_symlink (call_frame_t *frame, xlator_t *this, const char *linkpath,
                            FIRST_CHILD (this),
                            FIRST_CHILD (this)->fops->symlink,
                            linkpath, loc, umask, xdata);
+        return 0;
+}
+
+/*
+ * link
+ */
+
+int32_t
+ims_link_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
+              int32_t op_ret, int32_t op_errno,
+              inode_t *inode, struct iatt *buf,
+              struct iatt *preparent, struct iatt *postparent,
+              dict_t *xdata)
+{
+        int ret             = 0;
+        ims_priv_t *priv    = NULL;
+        ims_xdb_t *xdb      = NULL;
+        ims_xdb_file_t file = { 0, };
+
+        if (op_ret == -1)
+                goto out;
+
+        priv = this->private;
+        xdb = priv->xdb;
+
+        file.path = (char *) cookie;
+        file.gfid = uuid_utoa (buf->ia_gfid);
+
+        ret = ims_xdb_link_file (xdb, &file);
+        if (ret)
+                gf_log (this->name, GF_LOG_WARNING,
+                        "ims_link_cbk: ims_xdb_link_file failed "
+                        "(ret=%d, db_ret=%d)",
+                        ret, xdb->db_ret);
+
+out:
+        STACK_UNWIND_STRICT (link, frame, op_ret, op_errno, inode, buf,
+                             preparent, postparent, xdata);
+        return 0;
+}
+
+int32_t
+ims_link (call_frame_t *frame, xlator_t *this,
+          loc_t *oldloc, loc_t *newloc, dict_t *xdata)
+{
+        STACK_WIND_COOKIE (frame, ims_link_cbk, (void *) newloc->path,
+                           FIRST_CHILD (this),
+                           FIRST_CHILD (this)->fops->link,
+                           oldloc, newloc, xdata);
+        return 0;
+}
+
+/*
+ * rename
+ */
+
+struct _ims_rename_data {
+        char *old_path;
+        char *new_path;
+};
+
+typedef struct _ims_rename_data ims_rename_data_t;
+
+int32_t
+ims_rename_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
+                int32_t op_ret, int32_t op_errno, struct iatt *buf,
+                struct iatt *preoldparent, struct iatt *postoldparent,
+                struct iatt *prenewparent, struct iatt *postnewparent,
+                dict_t *xdata)
+{
+        int ret                        = 0;
+        ims_priv_t *priv               = NULL;
+        ims_xdb_t *xdb                 = NULL;
+        ims_xdb_file_t file            = { 0, };
+        ims_rename_data_t *rename_data = NULL;
+
+        if (op_ret == -1)
+                goto out;
+
+        if (cookie == NULL)
+                goto out;
+
+        priv = this->private;
+        xdb = priv->xdb;
+
+        rename_data = cookie;
+
+        file.path = rename_data->old_path;
+        file.extra = (void *) rename_data->new_path;
+
+        ret = ims_xdb_rename (xdb, &file);
+        if (ret)
+                gf_log (this->name, GF_LOG_WARNING,
+                        "ims_rename_cbk: ims_xdb_rename failed "
+                        "(ret=%d, db_ret=%d))",
+                        ret, xdb->db_ret);
+
+out:
+        FREE (cookie);
+        STACK_UNWIND_STRICT (rename, frame, op_ret, op_errno, buf,
+                             preoldparent, postoldparent,
+                             prenewparent, postnewparent, xdata);
+        return 0;
+}
+
+int32_t
+ims_rename (call_frame_t *frame, xlator_t *this,
+            loc_t *oldloc, loc_t *newloc, dict_t *xdata)
+{
+        ims_rename_data_t *rename_data = NULL;
+
+        rename_data = CALLOC (1, sizeof(*rename_data));
+        if (!rename_data) {
+                gf_log (this->name, GF_LOG_WARNING,
+                        "ims_rename: CALLOC failed");
+                goto out;
+        }
+
+        rename_data->old_path = (char *) oldloc->path;
+        rename_data->new_path = (char *) newloc->path;
+out:
+        STACK_WIND_COOKIE (frame, ims_rename_cbk, (void *) rename_data,
+                           FIRST_CHILD (this),
+                           FIRST_CHILD (this)->fops->rename,
+                           oldloc, newloc, xdata);
         return 0;
 }
 
@@ -618,9 +733,9 @@ struct xlator_fops fops = {
         .unlink       = ims_unlink,
         .rmdir        = ims_rmdir,
         .symlink      = ims_symlink,
-#if 0
         .rename       = ims_rename,
         .link         = ims_link,
+#if 0
         .truncate     = ims_truncate,
         .writev       = ims_writev,
         .setxattr     = ims_setxattr,

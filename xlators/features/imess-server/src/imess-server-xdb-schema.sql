@@ -1,20 +1,29 @@
 --
 -- imess xdb schema
 --
+drop table if exists xdb_xgfid;
 drop table if exists xdb_xfile;
 drop table if exists xdb_xname;
 drop table if exists xdb_xdata;
+
+-- glusterfs gfids
+create table xdb_xgfid (
+	gid	integer not null,
+	gfid	text not null,
+
+	primary key (gid),
+	unique (gfid)
+);
 
 -- glusterfs files
 -- FIXME: this cannot support hard links. separate table into two.
 create table xdb_xfile (
 	fid	integer not null,
-	gfid	text not null,
+	gid	integer not null references xdb_xgfid (gid),
 	path	text not null,
 	name	text not null,
 
-	primary key (fid),
-	unique (gfid)
+	primary key (fid)
 );
 
 create index ix_xdb_xfile_path on xdb_xfile (path);
@@ -48,25 +57,23 @@ create index ix_xdb_xname_name on xdb_xname (name);
 -- file/attributes/values relations
 create table xdb_xdata (
 	xid	integer not null,
-	fid	integer not null references xdb_xfile (fid),
+	gid	integer not null references xdb_xgfid (gid),
 	nid	integer not null references xdb_xname (nid),
 	ival	integer,
 	sval	text,
 
-	unique (fid, nid),
+	unique (gid, nid),
 	primary key (xid)
 );
 
--- upon unlinking the file entry, remove all xdata entries.
--- keep the xname entries for later (possible) hits.
--- using before trigger would be safe, as long as it doesn't touch the row
--- which is to be affected.
--- more at: https://sqlite.org/lang_createtrigger.html
-create trigger tr_xdb_xfile_unlink before delete on xdb_xfile
-	begin
-		delete from xdb_xdata where xdb_xdata.fid = OLD.fid;
-	end;
-
 create index ix_xdb_xdata_ival on xdb_xdata (nid, ival);
 create index ix_xdb_xdata_sval on xdb_xdata (nid, sval);
+
+create trigger trg_xdb_unlink after delete on xdb_xfile
+	begin
+		delete from xdb_xgfid where gid not in
+			(select distinct gid from xdb_xfile);
+		delete from xdb_xdata where gid not in
+			(select gid from xdb_xgfid);
+	end;
 
