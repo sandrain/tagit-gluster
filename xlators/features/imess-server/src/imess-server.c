@@ -19,7 +19,8 @@
  * helper functions
  */
 
-static int populate_xdb (ims_priv_t *priv, struct iatt *buf, const char *path)
+static inline int
+populate_xdb (ims_priv_t *priv, struct iatt *buf, const char *path)
 {
         int ret              = 0;
         ims_xdb_t *xdb       = NULL;
@@ -42,6 +43,27 @@ static int populate_xdb (ims_priv_t *priv, struct iatt *buf, const char *path)
         ret = ims_xdb_insert_stat (xdb, &file, &sb);
 
 out:
+        if (ret)
+                ims_xdb_tx_rollback (xdb);
+        else
+                ims_xdb_tx_commit (xdb);
+
+        return ret;
+}
+
+static inline int
+remove_from_xdb (ims_priv_t *priv, void *gfid)
+{
+        int ret             = 0;
+        ims_xdb_t *xdb      = NULL;
+        ims_xdb_file_t file = { 0, };
+
+        xdb = priv->xdb;
+        file.gfid = gfid;
+
+        ims_xdb_tx_begin (xdb);
+
+        ret = ims_xdb_remove_file (xdb, &file);
         if (ret)
                 ims_xdb_tx_rollback (xdb);
         else
@@ -100,6 +122,97 @@ ims_mkdir (call_frame_t *frame, xlator_t *this, loc_t *loc, mode_t mode,
                            FIRST_CHILD (this),
                            FIRST_CHILD (this)->fops->mkdir,
                            loc, mode, umask, xdata);
+        return 0;
+}
+
+/*
+ * unlink
+ */
+
+int
+ims_unlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
+                  int32_t op_ret, int32_t op_errno,
+                  struct iatt *preparent, struct iatt *postparent,
+                  dict_t *xdata)
+{
+        int ret             = 0;
+        ims_priv_t *priv    = NULL;
+
+        if (op_ret == -1)
+                goto out;
+
+        priv = this->private;
+
+        ret = remove_from_xdb (priv, cookie);
+        if (ret)
+                gf_log (this->name, GF_LOG_WARNING,
+                        "ims_unlink_cbk: xdb_remove_file failed "
+                        "(ret=%d, db_ret=%d)",
+                        ret, priv->xdb->db_ret);
+
+out:
+        STACK_UNWIND_STRICT (unlink, frame, op_ret, op_errno,
+                             preparent, postparent, xdata);
+        return 0;
+}
+
+int
+ims_unlink (call_frame_t *frame, xlator_t *this, loc_t *loc, int xflag,
+            dict_t *xdata)
+{
+        void *cookie = NULL;
+
+        cookie = uuid_utoa (loc->inode->gfid);
+
+        STACK_WIND_COOKIE (frame, ims_unlink_cbk, cookie,
+                           FIRST_CHILD (this),
+                           FIRST_CHILD (this)->fops->unlink,
+                           loc, xflag, xdata);
+        return 0;
+}
+
+/*
+ * rmdir
+ */
+
+int
+ims_rmdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
+                 int32_t op_ret, int32_t op_errno,
+                 struct iatt *preparent, struct iatt *postparent,
+                 dict_t *xdata)
+{
+        int ret             = 0;
+        ims_priv_t *priv    = NULL;
+
+        if (op_ret == -1)
+                goto out;
+
+        priv = this->private;
+        ret = remove_from_xdb (priv, cookie);
+        if (ret)
+                gf_log (this->name, GF_LOG_WARNING,
+                        "ims_rmdir_cbk: xdb_remove_file failed "
+                        "(ret=%d, db_ret=%d)",
+                        ret, priv->xdb->db_ret);
+
+out:
+        STACK_UNWIND_STRICT (rmdir, frame, op_ret, op_errno,
+                            preparent, postparent, xdata);
+        return 0;
+}
+
+int
+ims_rmdir (call_frame_t *frame, xlator_t *this, loc_t *loc, int flags,
+             dict_t *xdata)
+{
+        void *cookie = NULL;
+
+        cookie = uuid_utoa (loc->inode->gfid);
+
+        STACK_WIND_COOKIE (frame, ims_rmdir_cbk, cookie,
+                           FIRST_CHILD(this),
+                           FIRST_CHILD(this)->fops->rmdir,
+                           loc, flags, xdata);
         return 0;
 }
 
@@ -378,6 +491,8 @@ struct xlator_cbks cbks = {
 
 struct xlator_fops fops = {
         .mkdir        = ims_mkdir,
+        .unlink       = ims_unlink,
+        .rmdir        = ims_rmdir,
         .symlink      = ims_symlink,
         .create       = ims_create,
 	.ipc          = ims_ipc,

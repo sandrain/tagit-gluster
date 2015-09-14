@@ -35,15 +35,12 @@ enum {
 	GET_FID,		/* [2] */
 	INSERT_FILE,		/* [3] */
 	INSERT_STAT,		/* [4] */
+	REMOVE_FILE,		/* [5] */
 
-	REMOVE_FILE,		/* [2] */
 	INSERT_XNAME,		/* [3] */
 	INSERT_XDATA,		/* [4] */
 	REMOVE_XDATA,		/* [5] */
 	UPDATE_STAT,		/* [7] */
-	GET_ALL_XFILE,		/* [9] */
-	GET_ALL_XNAME,		/* [10] */
-	GET_ALL_XDATA,		/* [11] */
 
 	XDB_N_SQLS,
 };
@@ -76,9 +73,9 @@ static const char *xdb_sqls[XDB_N_SQLS] = {
 	"union select ?,11,?,null\n"
 	"union select ?,12,?,null\n"
 	"union select ?,13,?,null\n",
-
-/* [1] REMOVE_FILE (gfid) */
+/* [5] REMOVE_FILE (gfid) */
 	"delete from xdb_xfile where gfid=?\n",
+
 /* [2] INSERT_XNAME (name) */
 	"insert or ignore into xdb_xname (name) values (?)\n",
 /* [3] INSERT_XDATA (gfid, name, ival, sval) */
@@ -92,12 +89,6 @@ static const char *xdb_sqls[XDB_N_SQLS] = {
 /* [6] UPDATE_STAT (ival, gfid, nid) */
 	"update xdb_xdata set ival=?\n"
 	"where fid=(select fid from xdb_xfile where gfid=?) and nid=?\n",
-/* [8] GET_ALL_XFILE */
-	"select fid,gfid,path,name from xdb_xfile",
-/* [9] GET_ALL_XNAME */
-	"select nid,name from xdb_xname",
-/* [10] GET_ALL_XDATA */
-	"select xid,fid,nid,ival,sval from xdb_xdata",
 };
 
 /*
@@ -164,11 +155,11 @@ static int get_fid (ims_xdb_t *self, ims_xdb_file_t *file, uint64_t *fid)
 
         db_ret = sqlite3_prepare_v2 (self->conn, xdb_sqls[GET_FID],
                                      -1, &stmt, 0);
-        if (db_ret)
+        if (db_ret != SQLITE_OK)
                 goto out;
 
         db_ret = sqlite3_bind_text (stmt, 1, file->gfid, -1, SQLITE_STATIC);
-        if (db_ret)
+        if (db_ret != SQLITE_OK)
                 goto out;
 
         do {
@@ -332,14 +323,14 @@ int ims_xdb_insert_file (ims_xdb_t *self, ims_xdb_file_t *file)
 
         db_ret = sqlite3_prepare_v2 (self->conn, xdb_sqls[INSERT_FILE],
                                      -1, &stmt, 0);
-        if (db_ret)
+        if (db_ret != SQLITE_OK)
                 goto out;
 
         db_ret = sqlite3_bind_text (stmt, 1, file->gfid, -1, SQLITE_STATIC);
         db_ret |= sqlite3_bind_text (stmt, 2, file->path, -1, SQLITE_STATIC);
         db_ret |= sqlite3_bind_text (stmt, 3, file->path, -1, SQLITE_STATIC);
         db_ret = sqlite3_bind_int (stmt, 4, path_filename(file->path));
-        if (db_ret)
+        if (db_ret != SQLITE_OK)
                 goto out;
 
         do {
@@ -356,7 +347,33 @@ out:
 
 int ims_xdb_remove_file (ims_xdb_t *self, ims_xdb_file_t *file)
 {
-	return 0;
+        int ret            = -1;
+        int db_ret         = 0;
+        sqlite3_stmt *stmt = NULL;
+
+        __valptr (self, out);
+        __valptr (file, out);
+
+        db_ret = sqlite3_prepare_v2 (self->conn, xdb_sqls[REMOVE_FILE],
+                                     -1, &stmt, NULL);
+        if (db_ret != SQLITE_OK)
+                goto out;
+
+        db_ret = sqlite3_bind_text (stmt, 1, file->gfid, -1, SQLITE_STATIC);
+        if (db_ret != SQLITE_OK)
+                goto out;
+
+        do {
+                db_ret = sqlite3_step (stmt);
+        } while (db_ret == SQLITE_BUSY);
+
+        ret = db_ret == SQLITE_DONE ? 0 : -1;
+
+out:
+        self->db_ret = db_ret;
+        if (stmt)
+                sqlite3_finalize (stmt);
+        return ret;
 }
 
 int ims_xdb_insert_stat (ims_xdb_t *self, ims_xdb_file_t *file,
@@ -373,7 +390,7 @@ int ims_xdb_insert_stat (ims_xdb_t *self, ims_xdb_file_t *file,
 
         db_ret = sqlite3_prepare_v2 (self->conn, xdb_sqls[INSERT_STAT],
                                      -1, &stmt, 0);
-        if (db_ret)
+        if (db_ret != SQLITE_OK)
                 goto out;
 
         ret = get_fid (self, file, &fid);
