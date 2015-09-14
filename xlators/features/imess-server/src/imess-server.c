@@ -384,6 +384,54 @@ ims_create (call_frame_t *frame, xlator_t *this, loc_t *loc, int32_t flags,
 }
 
 /*
+ * setattr
+ */
+
+int
+ims_setattr_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
+                 int32_t op_ret, int32_t op_errno,
+                 struct iatt *preop, struct iatt *postop, dict_t *xdata)
+{
+        int ret             = 0;
+        struct stat sb      = { 0, };
+        ims_priv_t *priv    = NULL;
+        ims_xdb_t *xdb      = NULL;
+        ims_xdb_file_t file = { 0, };
+
+        if (op_ret == -1)
+                goto out;
+
+        priv = this->private;
+        xdb = priv->xdb;
+        iatt_to_stat (postop, &sb);
+
+        file.gfid = uuid_utoa (postop->ia_gfid);
+
+        ret = ims_xdb_update_stat (xdb, &file, &sb);
+        if (ret)
+                gf_log (this->name, GF_LOG_WARNING,
+                        "ims_setattr_cbk: ims_xdb_update_stat failed "
+                        "(ret=%d, db_ret=%d)",
+                        ret, xdb->db_ret);
+
+out:
+        STACK_UNWIND_STRICT (setattr, frame, op_ret, op_errno,
+                             preop, postop, xdata);
+        return 0;
+}
+
+int32_t
+ims_setattr (call_frame_t *frame, xlator_t *this,
+             loc_t *loc, struct iatt *stbuf, int32_t valid, dict_t *xdata)
+{
+        STACK_WIND (frame, ims_setattr_cbk,
+                    FIRST_CHILD(this),
+                    FIRST_CHILD(this)->fops->setattr,
+                    loc, stbuf, valid, xdata);
+        return 0;
+}
+
+/*
  * symlink
  */
 
@@ -747,8 +795,8 @@ struct xlator_fops fops = {
         .ftruncate    = ims_ftruncate,
 #endif
         .create       = ims_create,
-#if 0
         .setattr      = ims_setattr,
+#if 0
         .fsetattr     = ims_fsetattr,
 	.fallocate    = ims_fallocate,
 	.discard      = ims_discard,

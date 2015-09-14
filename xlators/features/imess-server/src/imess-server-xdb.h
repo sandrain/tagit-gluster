@@ -41,6 +41,8 @@ enum {
         IMS_XDB_ST_ATIME,
         IMS_XDB_ST_MTIME,
         IMS_XDB_ST_CTIME,
+
+        N_IMS_XDB_ST_ATTRS      = IMS_XDB_ST_CTIME,
 };
 
 struct _ims_xdb {
@@ -141,7 +143,7 @@ int ims_xdb_insert_stat (ims_xdb_t *xdb, ims_xdb_file_t *file,
                          struct stat *sb);
 
 int ims_xdb_update_stat (ims_xdb_t *xdb, ims_xdb_file_t *file,
-                         struct stat *sb, int attr);
+                         struct stat *sb);
 
 int ims_xdb_rename (ims_xdb_t *xdb, ims_xdb_file_t *file);
 

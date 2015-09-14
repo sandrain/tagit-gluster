@@ -36,17 +36,17 @@ enum {
         INSERT_GFID,            /* [3] */
 	INSERT_FILE,		/* [4] */
 	INSERT_STAT,		/* [5] */
-	REMOVE_FILE,		/* [6] */
-        LINK_FILE,              /* [7] */
-        UNLINK_FILE,            /* [8] */
-        RENAME,                 /* [9] */
+	UPDATE_STAT,		/* [6] */
+	REMOVE_FILE,		/* [7] */
+        LINK_FILE,              /* [8] */
+        UNLINK_FILE,            /* [9] */
+        RENAME,                 /* [10] */
 
 /******************************/
 
 	INSERT_XNAME,		/* [3] */
 	INSERT_XDATA,		/* [4] */
 	REMOVE_XDATA,		/* [5] */
-	UPDATE_STAT,		/* [7] */
 
 	XDB_N_SQLS,
 };
@@ -84,14 +84,16 @@ static const char *xdb_sqls[XDB_N_SQLS] = {
                 "union select ?,11,?,null\n"
                 "union select ?,12,?,null\n"
                 "union select ?,13,?,null\n",
-/* [6] REMOVE_FILE (gfid) */
+/* [6] UPDATE_STAT (ival, gid, nid) */
+        "update xdb_xdata set ival=? where gid=? and nid=?",
+/* [7] REMOVE_FILE (gfid) */
 	"delete from xdb_xgfid where gfid=?\n",
-/* [7] LINK_FILE (gfid, path, path, pos) */
+/* [8] LINK_FILE (gfid, path, path, pos) */
         "insert into xdb_xfile (gid, path, name) values (\n"
                 "(select gid from xdb_xgfid where gfid=?),?,substr(?,?))\n",
-/* [8] UNLINK_FILE (path) */
+/* [9] UNLINK_FILE (path) */
         "delete from xdb_xfile where path=?\n",
-/* [9] RENAME (newpath, newpath, pos, oldpath) */
+/* [10] RENAME (newpath, newpath, pos, oldpath) */
         "update xdb_xfile set path=?,name=substr(?,?) where path=?\n",
 
 /******************************/
@@ -106,10 +108,6 @@ static const char *xdb_sqls[XDB_N_SQLS] = {
 	"delete from xdb_xdata where\n"
                 "fid=(select fid from xdb_xfile where gfid=?) and\n"
                 "nid=(select nid from xdb_xname where name=?)\n",
-/* [6] UPDATE_STAT (ival, gfid, nid) */
-	"update xdb_xdata set ival=?\n"
-                "where fid=(select fid from xdb_xfile where gfid=?)\n"
-                "and nid=?\n",
 };
 
 /*
@@ -543,10 +541,82 @@ out:
         return ret;
 }
 
-int ims_xdb_update_stat (ims_xdb_t *self, ims_xdb_file_t *file,
-                         struct stat *sb, int attr)
+static inline int
+__update_xdata (sqlite3_stmt *stmt, int gid, int nid, uint64_t ival)
 {
-	return 0;
+        int db_ret = 0;
+
+        db_ret = sqlite3_bind_int64 (stmt, 1, ival);
+        db_ret |= sqlite3_bind_int64 (stmt, 2, gid);
+        db_ret |= sqlite3_bind_int (stmt, 3, nid);
+
+        if (db_ret)
+                goto out;
+
+        do {
+                db_ret = sqlite3_step (stmt);
+        } while (db_ret == SQLITE_BUSY);
+
+        sqlite3_reset (stmt);
+out:
+        return db_ret;
+}
+
+#define update_xdata(stmt, gid, nid, ival)                              \
+        do {                                                            \
+                db_ret = __update_xdata (stmt, gid, nid, ival);         \
+                if (db_ret != SQLITE_DONE) {                            \
+                        ims_xdb_tx_rollback (self);                     \
+                        goto out;                                       \
+                }                                                       \
+        } while (0);
+
+int ims_xdb_update_stat (ims_xdb_t *self, ims_xdb_file_t *file,
+                         struct stat *sb)
+{
+        int ret              = -1;
+        int db_ret           = 0;
+        uint64_t gid         = 0;
+        sqlite3_stmt *stmt   = NULL;
+
+        __valptr (self, out);
+        __valptr (file, out);
+        __valptr (file->gfid, out);
+        __valptr (sb, out);
+
+        ret = get_gid (self, file, &gid);
+        if (ret)
+                return -1;
+
+        db_ret = sqlite3_prepare_v2 (self->conn, xdb_sqls[UPDATE_STAT],
+                                     -1, &stmt, 0);
+        if (db_ret != SQLITE_OK)
+                goto out;
+
+        ims_xdb_tx_begin (self);
+
+        update_xdata (stmt, gid, IMS_XDB_ST_DEV, sb->st_dev);
+        update_xdata (stmt, gid, IMS_XDB_ST_INO, sb->st_ino);
+        update_xdata (stmt, gid, IMS_XDB_ST_MODE, sb->st_mode);
+        update_xdata (stmt, gid, IMS_XDB_ST_NLINK, sb->st_nlink);
+        update_xdata (stmt, gid, IMS_XDB_ST_UID, sb->st_uid);
+        update_xdata (stmt, gid, IMS_XDB_ST_GID, sb->st_gid);
+        update_xdata (stmt, gid, IMS_XDB_ST_RDEV, sb->st_rdev);
+        update_xdata (stmt, gid, IMS_XDB_ST_SIZE, sb->st_size);
+        update_xdata (stmt, gid, IMS_XDB_ST_BLKSIZE, sb->st_blksize);
+        update_xdata (stmt, gid, IMS_XDB_ST_BLOCKS, sb->st_blocks);
+        update_xdata (stmt, gid, IMS_XDB_ST_ATIME, sb->st_atime);
+        update_xdata (stmt, gid, IMS_XDB_ST_MTIME, sb->st_mtime);
+        update_xdata (stmt, gid, IMS_XDB_ST_CTIME, sb->st_ctime);
+
+        ims_xdb_tx_commit (self);
+
+out:
+        self->db_ret = db_ret;
+        if (stmt)
+                sqlite3_finalize (stmt);
+
+        return ret;
 }
 
 /* file->path: old path, file->extra: new path:
