@@ -9,7 +9,10 @@
 #include "config.h"
 #endif
 
+#include <ctype.h>
+
 #include "glusterfs.h"
+#include "glusterfs-acl.h"
 #include "xlator.h"
 #include "logging.h"
 
@@ -102,9 +105,6 @@ ims_mkdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
                         ret, priv->xdb->db_ret);
 
 out:
-        if (cookie)
-                GF_FREE (cookie);
-
         STACK_UNWIND_STRICT (mkdir, frame, op_ret, op_errno, inode, buf,
                              preparent, postparent, xdata);
         return 0;
@@ -114,11 +114,7 @@ int32_t
 ims_mkdir (call_frame_t *frame, xlator_t *this, loc_t *loc, mode_t mode,
            mode_t umask, dict_t *xdata)
 {
-        void *cookie = NULL;
-
-        cookie = gf_strdup (loc->path);
-
-        STACK_WIND_COOKIE (frame, ims_mkdir_cbk, cookie,
+        STACK_WIND_COOKIE (frame, ims_mkdir_cbk, (void *) loc->path,
                            FIRST_CHILD (this),
                            FIRST_CHILD (this)->fops->mkdir,
                            loc, mode, umask, xdata);
@@ -217,6 +213,144 @@ ims_rmdir (call_frame_t *frame, xlator_t *this, loc_t *loc, int flags,
 }
 
 /*
+ * setxattr
+ */
+
+#if 0
+struct _ims_setxattr_handler_data {
+        ims_xdb_t      *xdb;
+        ims_xdb_file_t *file;
+};
+
+typedef struct _ims_xattr_handler_data ims_setxattr_handler_data_t;
+
+static inline int
+parse_value_type (data_t *v)
+{
+        int i        = 0;
+        int32_t len  = 0;
+        char *data   = NULL;
+        int type     = IMS_XDB_TYPE_NONE;
+
+        data = (char *) data_to_ptr (v);
+        len = v->len;
+
+        if (data[0] != '-' || isdigit (data[0]))
+                goto try_string;
+
+        for (i = 1; i < len; i++) {
+                if (!isdigit (data[i]))
+                        goto try_string;
+        }
+
+        type = IMS_XDB_TYPE_INTEGER;
+        goto out;
+
+try_string:
+        for (i = 0; i < len; i++) {
+                if (!isprint (data[i]))
+                        goto out;
+        }
+
+        type = IMS_XDB_TYPE_STRING;
+
+out:
+        return type;
+}
+
+static int
+handle_setxattr_kv (dict_t *dict, char *k, data_t *v, void *tmp)
+{
+        int ret                           = 0;
+        int type                          = 0;
+        ims_xdb_t *xdb                    = NULL;
+        ims_xdb_file_t *file              = NULL;
+        ims_xdb_attr_t xattr              = { 0, };
+        ims_setxattr_handler_data_t *data = NULL;
+
+        if (XATTR_IS_PATHINFO (k))
+                goto out;
+        else if (ZR_FILE_CONTENT_REQUEST (k))
+                goto out;
+        else if (GF_POSIX_ACL_REQUEST (k))
+                goto out;
+
+        data = (ims_setxattr_handler_data_t *) tmp;
+
+        type = parse_value_type (v);
+        if (type == IMS_XDB_TYPE_NONE)
+                goto out;
+
+        xdb = data->xdb;
+        file = data->file;
+
+        xattr.name = k;
+        xattr.type = type;
+
+        if (type == IMS_XDB_TYPE_INTEGER)
+                xattr.ival = data_to_int64 (v);
+        else
+                xattr.sval = data_to_str (v);
+
+        ret = ims_xdb_insert_xattr (xdb, file, &xattr, 1);
+        if (ret)
+                gf_log (this->name, GF_LOG_WARNING,
+                        "ims_setxattr_cbk: ims_xdb_insert_xattr failed "
+                        "(ret=%d, db_ret=%d)",
+                        ret, priv->xdb->db_ret);
+
+out:
+        return 0;
+}
+
+int32_t
+ims_setxattr_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
+                  int32_t op_ret, int32_t op_errno, dict_t *xdata)
+{
+        int ret                                 = 0;
+        ims_priv_t *priv                        = NULL;
+        ims_xdb_file_t file                     = { 0, };
+        ims_setxattr_handler_data_t filler_data = { 0, };
+
+        if (op_ret == -1)
+                goto out;
+
+        priv = this->private;
+        file.gfid = cookie;
+
+        filler_data->xdb  = priv->xdb;
+        filler_data->file = &file;
+
+        ret = dict_foreach (xdata, handle_setxattr_kv, &filler_data);
+        if (ret)
+                gf_log (this->name, GF_LOG_WARNING,
+                        "ims_setxattr_cbk: handle_setxattr_kv failed "
+                        "(ret=%d, db_ret=%d)",
+                        ret, priv->xdb->db_ret);
+
+out:
+        STACK_UNWIND_STRICT (setxattr, frame, op_ret, op_errno, xdata);
+        return 0;
+}
+
+
+int32_t
+ims_setxattr (call_frame_t *frame, xlator_t *this,
+              loc_t *loc, dict_t *dict, int flags, dict_t *xdata)
+{
+        void *cookie = NULL;
+
+        cookie = uuid_utoa (loc->inode->gfid);
+
+        STACK_WIND_COOKIE (frame, ims_setxattr_cbk, cookie,
+                           FIRST_CHILD (this),
+                           FIRST_CHILD (this)->fops->setxattr,
+                           loc, dict, flags, xdata);
+        return 0;
+}
+#endif
+
+/*
  * create
  */
 
@@ -243,7 +377,6 @@ ims_create_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
                         ret, priv->xdb->db_ret);
 
 out:
-        GF_FREE(cookie);
         STACK_UNWIND_STRICT (create, frame, op_ret, op_errno, fd, inode, buf,
                              preparent, postparent, xdata);
         return 0;
@@ -253,11 +386,7 @@ int
 ims_create (call_frame_t *frame, xlator_t *this, loc_t *loc, int32_t flags,
             mode_t mode, mode_t umask, fd_t *fd, dict_t *xdata)
 {
-        void *cookie = NULL;
-
-        cookie = gf_strdup (loc->path);
-
-        STACK_WIND_COOKIE (frame, ims_create_cbk, cookie,
+        STACK_WIND_COOKIE (frame, ims_create_cbk, (void *) loc->path,
                            FIRST_CHILD (this),
                            FIRST_CHILD( this)->fops->create,
                            loc, flags, mode, umask, fd, xdata);
@@ -291,7 +420,6 @@ ims_symlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
                         ret, priv->xdb->db_ret);
 
 out:
-        GF_FREE(cookie);
         STACK_UNWIND_STRICT (symlink, frame, op_ret, op_errno, inode, buf,
                              preparent, postparent, xdata);
         return 0;
@@ -302,11 +430,7 @@ int
 ims_symlink (call_frame_t *frame, xlator_t *this, const char *linkpath,
                loc_t *loc, mode_t umask, dict_t *xdata)
 {
-        void *cookie = NULL;
-
-        cookie = gf_strdup(loc->path);
-
-        STACK_WIND_COOKIE (frame, ims_symlink_cbk, cookie,
+        STACK_WIND_COOKIE (frame, ims_symlink_cbk, (void *) loc->path,
                            FIRST_CHILD (this),
                            FIRST_CHILD (this)->fops->symlink,
                            linkpath, loc, umask, xdata);
@@ -494,57 +618,29 @@ struct xlator_fops fops = {
         .unlink       = ims_unlink,
         .rmdir        = ims_rmdir,
         .symlink      = ims_symlink,
-        .create       = ims_create,
-	.ipc          = ims_ipc,
-};
-
 #if 0
-struct xlator_fops fops = {
-        .stat         = ims_stat,
-        .readlink     = ims_readlink,
-        .mknod        = ims_mknod,
-        .mkdir        = ims_mkdir,
-        .unlink       = ims_unlink,
-        .rmdir        = ims_rmdir,
-        .symlink      = ims_symlink,
         .rename       = ims_rename,
         .link         = ims_link,
         .truncate     = ims_truncate,
-        .open         = ims_open,
-        .readv        = ims_readv,
         .writev       = ims_writev,
-        .statfs       = ims_statfs,
-        .flush        = ims_flush,
-        .fsync        = ims_fsync,
         .setxattr     = ims_setxattr,
         .getxattr     = ims_getxattr,
         .removexattr  = ims_removexattr,
         .fsetxattr    = ims_fsetxattr,
         .fgetxattr    = ims_fgetxattr,
         .fremovexattr = ims_fremovexattr,
-        .opendir      = ims_opendir,
-        .readdir      = ims_readdir,
-        .readdirp     = ims_readdirp,
-        .fsyncdir     = ims_fsyncdir,
-        .access       = ims_access,
         .ftruncate    = ims_ftruncate,
-        .fstat        = ims_fstat,
+#endif
         .create       = ims_create,
-        .lk           = ims_lk,
-        .inodelk      = ims_inodelk,
-        .finodelk     = ims_finodelk,
-        .entrylk      = ims_entrylk,
-        .lookup       = ims_lookup,
-        .xattrop      = ims_xattrop,
-        .fxattrop     = ims_fxattrop,
+#if 0
         .setattr      = ims_setattr,
         .fsetattr     = ims_fsetattr,
 	.fallocate    = ims_fallocate,
 	.discard      = ims_discard,
         .zerofill     = ims_zerofill,
+#endif
 	.ipc          = ims_ipc,
 };
-#endif
 
 struct volume_options options [] = {
 	{ .key = { "db-path" },

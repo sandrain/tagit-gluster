@@ -6,18 +6,19 @@ drop table if exists xdb_xname;
 drop table if exists xdb_xdata;
 
 -- glusterfs files
+-- FIXME: this cannot support hard links. separate table into two.
 create table xdb_xfile (
 	fid	integer not null,
 	gfid	text not null,
 	path	text not null,
 	name	text not null,
 
-	primary key (fid)
-	,unique (gfid)
+	primary key (fid),
+	unique (gfid)
 );
 
 create index ix_xdb_xfile_path on xdb_xfile (path);
-create index ix_xdb_xfile_name on xdb_xfile (path);
+create index ix_xdb_xfile_name on xdb_xfile (name);
 
 -- file attributes (only names), including stat(2) and xattrs
 create table xdb_xname (
