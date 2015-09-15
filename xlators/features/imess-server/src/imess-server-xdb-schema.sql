@@ -69,11 +69,11 @@ create table xdb_xdata (
 create index ix_xdb_xdata_ival on xdb_xdata (nid, ival);
 create index ix_xdb_xdata_sval on xdb_xdata (nid, sval);
 
-create trigger trg_xdb_unlink after delete on xdb_xfile
-	begin
-		delete from xdb_xgfid where gid not in
-			(select distinct gid from xdb_xfile);
-		delete from xdb_xdata where gid not in
-			(select gid from xdb_xgfid);
-	end;
-
+-- this is slow, leave the stale data and take care of them when we mount.
+--create trigger trg_xdb_unlink after delete on xdb_xfile
+--	begin
+--		delete from xdb_xgfid where gid not in
+--			(select distinct gid from xdb_xfile);
+--		delete from xdb_xdata where gid not in
+--			(select gid from xdb_xgfid);
+--	end;

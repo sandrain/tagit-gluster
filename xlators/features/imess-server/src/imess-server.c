@@ -426,7 +426,7 @@ ims_setattr_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 
         file.gfid = uuid_utoa (postop->ia_gfid);
 
-        ret = ims_xdb_update_stat (xdb, &file, &sb);
+        ret = ims_xdb_update_stat (xdb, &file, &sb, IMS_XDB_STAT_OP_WRITE);
         if (ret)
                 gf_log (this->name, GF_LOG_WARNING,
                         "ims_setattr_cbk: ims_xdb_update_stat failed "
@@ -784,8 +784,7 @@ init (xlator_t *this)
 	ret = ims_xdb_init (&priv->xdb, priv->db_path);
 	if (ret) {
 		gf_log (this->name, GF_LOG_ERROR,
-			"FATAL: index database intialization failed: "
-			"(db_ret = %d)", priv->xdb->db_ret);
+			"FATAL: ims_xdb_init failed (ret=%d)", ret);
 		goto out;
 	}
 

@@ -28,6 +28,14 @@ enum {
 };
 
 enum {
+        IMS_XDB_STAT_OP_ALL     = 0,
+        IMS_XDB_STAT_OP_WRITE,
+        IMS_XDB_STAT_OP_OWNER,
+
+        N_IMS_XDB_STAT_OPS,
+};
+
+enum {
         IMS_XDB_ST_DEV          = 1,
         IMS_XDB_ST_INO,
         IMS_XDB_ST_MODE,
@@ -143,7 +151,7 @@ int ims_xdb_insert_stat (ims_xdb_t *xdb, ims_xdb_file_t *file,
                          struct stat *sb);
 
 int ims_xdb_update_stat (ims_xdb_t *xdb, ims_xdb_file_t *file,
-                         struct stat *sb);
+                         struct stat *sb, int op);
 
 int ims_xdb_rename (ims_xdb_t *xdb, ims_xdb_file_t *file);
 
