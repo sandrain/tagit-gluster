@@ -44,7 +44,12 @@ void brick_callback (void *xl, char *brick,
 void fill_brick_spec (struct gf_brick_spec *brick, char *path)
 {
         brick->brick_path = strdup (path);
+        brick->filter = CHANGELOG_OP_TYPE_CREATE;
+#if 0
         brick->filter = CHANGELOG_OP_TYPE_BR_RELEASE;
+        brick->filter |= CHANGELOG_OP_TYPE_OPEN;
+        brick->filter |= CHANGELOG_OP_TYPE_CREATE;
+#endif
 
         brick->init         = brick_init;
         brick->fini         = brick_fini;
@@ -60,15 +65,21 @@ main (int argc, char **argv)
         void *bricks = NULL;
         struct gf_brick_spec *brick = NULL;
 
-        bricks = calloc (2, sizeof (struct gf_brick_spec));
+        bricks = calloc (4, sizeof (struct gf_brick_spec));
         if (!bricks)
                 goto error_return;
 
         brick = (struct gf_brick_spec *)bricks;
-        fill_brick_spec (brick, "/export/z1/zwoop");
+        fill_brick_spec (brick, "/mnt/local/ssd1/brick");
 
         brick++;
-        fill_brick_spec (brick, "/export/z2/zwoop");
+        fill_brick_spec (brick, "/mnt/local/ssd2/brick");
+
+        brick++;
+        fill_brick_spec (brick, "/mnt/local/ssd3/brick");
+
+        brick++;
+        fill_brick_spec (brick, "/mnt/local/ssd4/brick");
 
         ret = gf_changelog_init (NULL);
         if (ret)

@@ -787,6 +787,11 @@ struct xlator_fops {
         fop_ipc_cbk_t            ipc_cbk;
 };
 
+/*
+ * FIXME: hs: this is not a right place to be.
+ */
+#define IMESS_IPC_OP    0x1177E550U
+
 typedef int32_t (*cbk_forget_t) (xlator_t *this,
                                  inode_t *inode);
 
