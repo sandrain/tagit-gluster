@@ -341,6 +341,25 @@ ims_setxattr (call_frame_t *frame, xlator_t *this,
 #endif
 
 /*
+ * ftruncate
+ */
+int
+ims_setattr_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
+                 int32_t op_ret, int32_t op_errno,
+                 struct iatt *preop, struct iatt *postop, dict_t *xdata);
+
+int32_t
+ims_ftruncate (call_frame_t *frame, xlator_t *this,
+               fd_t *fd, off_t offset, dict_t *xdata)
+{
+        STACK_WIND (frame, ims_setattr_cbk,
+                    FIRST_CHILD(this),
+                    FIRST_CHILD(this)->fops->ftruncate,
+                    fd, offset, xdata);
+        return 0;
+}
+
+/*
  * create
  */
 
@@ -428,6 +447,21 @@ ims_setattr (call_frame_t *frame, xlator_t *this,
                     FIRST_CHILD(this),
                     FIRST_CHILD(this)->fops->setattr,
                     loc, stbuf, valid, xdata);
+        return 0;
+}
+
+/*
+ * fsetattr
+ */
+
+int32_t
+ims_fsetattr (call_frame_t *frame, xlator_t *this,
+              fd_t *fd, struct iatt *stbuf, int32_t valid, dict_t *xdata)
+{
+        STACK_WIND (frame, ims_setattr_cbk,
+                    FIRST_CHILD (this),
+                    FIRST_CHILD (this)->fops->fsetattr,
+                    fd, stbuf, valid, xdata);
         return 0;
 }
 
@@ -521,6 +555,38 @@ ims_link (call_frame_t *frame, xlator_t *this,
                            FIRST_CHILD (this),
                            FIRST_CHILD (this)->fops->link,
                            oldloc, newloc, xdata);
+        return 0;
+}
+
+/*
+ * truncate
+ */
+
+int32_t
+ims_truncate (call_frame_t *frame, xlator_t *this,
+              loc_t *loc, off_t offset, dict_t *xdata)
+{
+        STACK_WIND (frame, ims_setattr_cbk,
+                    FIRST_CHILD(this),
+                    FIRST_CHILD(this)->fops->truncate,
+                    loc, offset, xdata);
+        return 0;
+}
+
+/*
+ * writev
+ */
+
+int32_t
+ims_writev (call_frame_t *frame, xlator_t *this,
+            fd_t *fd, struct iovec *vector,
+            int32_t count, off_t offset,
+            uint32_t flags, struct iobref *iobref, dict_t *xdata)
+{
+        STACK_WIND (frame, ims_setattr_cbk,
+                    FIRST_CHILD(this),
+                    FIRST_CHILD(this)->fops->writev,
+                    fd, vector, count, offset, flags, iobref, xdata);
         return 0;
 }
 
@@ -783,21 +849,21 @@ struct xlator_fops fops = {
         .symlink      = ims_symlink,
         .rename       = ims_rename,
         .link         = ims_link,
-#if 0
         .truncate     = ims_truncate,
         .writev       = ims_writev,
+#if 0
         .setxattr     = ims_setxattr,
         .getxattr     = ims_getxattr,
         .removexattr  = ims_removexattr,
         .fsetxattr    = ims_fsetxattr,
         .fgetxattr    = ims_fgetxattr,
         .fremovexattr = ims_fremovexattr,
-        .ftruncate    = ims_ftruncate,
 #endif
+        .ftruncate    = ims_ftruncate,
         .create       = ims_create,
         .setattr      = ims_setattr,
-#if 0
         .fsetattr     = ims_fsetattr,
+#if 0
 	.fallocate    = ims_fallocate,
 	.discard      = ims_discard,
         .zerofill     = ims_zerofill,
