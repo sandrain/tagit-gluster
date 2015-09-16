@@ -567,11 +567,12 @@ out:
         return db_ret;
 }
 
-#define update_xdata(stmt, gid, nid, ival)                              \
+#define update_xdata(self, stmt, gid, nid, ival)                        \
         do {                                                            \
                 db_ret = __update_xdata (stmt, gid, nid, ival);         \
                 if (db_ret != SQLITE_DONE) {                            \
                         ret = -1;                                       \
+                        self->db_ret = db_ret;                          \
                         ims_xdb_tx_rollback (self);                     \
                         goto out;                                       \
                 }                                                       \
@@ -605,29 +606,31 @@ int ims_xdb_update_stat (ims_xdb_t *self, ims_xdb_file_t *file,
         ims_xdb_tx_begin (self);
 
         if (stat_op == IMS_XDB_STAT_OP_ALL) {
-                update_xdata (stmt, gid, IMS_XDB_ST_DEV, sb->st_dev);
-                update_xdata (stmt, gid, IMS_XDB_ST_INO, sb->st_ino);
-                update_xdata (stmt, gid, IMS_XDB_ST_MODE, sb->st_mode);
-                update_xdata (stmt, gid, IMS_XDB_ST_NLINK, sb->st_nlink);
-                update_xdata (stmt, gid, IMS_XDB_ST_RDEV, sb->st_rdev);
-                update_xdata (stmt, gid, IMS_XDB_ST_BLKSIZE, sb->st_blksize);
-                update_xdata (stmt, gid, IMS_XDB_ST_CTIME, sb->st_ctime);
+                update_xdata (self, stmt, gid, IMS_XDB_ST_DEV, sb->st_dev);
+                update_xdata (self, stmt, gid, IMS_XDB_ST_INO, sb->st_ino);
+                update_xdata (self, stmt, gid, IMS_XDB_ST_MODE, sb->st_mode);
+                update_xdata (self, stmt, gid, IMS_XDB_ST_NLINK, sb->st_nlink);
+                update_xdata (self, stmt, gid, IMS_XDB_ST_RDEV, sb->st_rdev);
+                update_xdata (self, stmt, gid, IMS_XDB_ST_BLKSIZE,
+                              sb->st_blksize);
+                update_xdata (self, stmt, gid, IMS_XDB_ST_CTIME, sb->st_ctime);
         }
 
         if (stat_op == IMS_XDB_STAT_OP_ALL ||
             stat_op == IMS_XDB_STAT_OP_OWNER)
         {
-                update_xdata (stmt, gid, IMS_XDB_ST_UID, sb->st_uid);
-                update_xdata (stmt, gid, IMS_XDB_ST_GID, sb->st_gid);
+                update_xdata (self, stmt, gid, IMS_XDB_ST_UID, sb->st_uid);
+                update_xdata (self, stmt, gid, IMS_XDB_ST_GID, sb->st_gid);
         }
 
         if (stat_op == IMS_XDB_STAT_OP_ALL ||
             stat_op == IMS_XDB_STAT_OP_WRITE)
         {
-                update_xdata (stmt, gid, IMS_XDB_ST_SIZE, sb->st_size);
-                update_xdata (stmt, gid, IMS_XDB_ST_BLOCKS, sb->st_blocks);
-                update_xdata (stmt, gid, IMS_XDB_ST_ATIME, sb->st_atime);
-                update_xdata (stmt, gid, IMS_XDB_ST_MTIME, sb->st_mtime);
+                update_xdata (self, stmt, gid, IMS_XDB_ST_SIZE, sb->st_size);
+                update_xdata (self, stmt, gid, IMS_XDB_ST_BLOCKS,
+                              sb->st_blocks);
+                update_xdata (self, stmt, gid, IMS_XDB_ST_ATIME, sb->st_atime);
+                update_xdata (self, stmt, gid, IMS_XDB_ST_MTIME, sb->st_mtime);
         }
 
         ims_xdb_tx_commit (self);
