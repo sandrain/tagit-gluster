@@ -5,6 +5,7 @@
 #include "glfs-handles.h"
 #include <string.h>
 #include <time.h>
+#include <sys/time.h>
 #include <readline/readline.h>
 #include <readline/history.h>
 
@@ -24,7 +25,9 @@ static char linebuf[LINEBUFSIZE];
 #define _llu(x)	((unsigned long long) (x))
 #endif
 
-static inline int print_result (FILE *fp, dict_t *xdata)
+static inline int
+print_result (FILE *fp, dict_t *xdata,
+              struct timeval *before, struct timeval *after)
 {
 	int ret = 0;
         int op_result = 0;
@@ -33,30 +36,46 @@ static inline int print_result (FILE *fp, dict_t *xdata)
 	uint64_t count = 0;
 	char keybuf[8] = { 0, };
 	char *row = NULL;
+        uint64_t sec = 0;
+        uint64_t usec = 0;
 
 	ret = dict_get_uint64 (xdata, "count", &count);
 	if (ret)
 		return -1;
 
 	for (i = 0; i < count; i++) {
-		sprintf (keybuf, "%llu", _llu(i));
+		sprintf (keybuf, "%llu", _llu (i));
 		ret = dict_get_str (xdata, keybuf, &row);
 
-		fprintf (fp, "[%7llu] %s\n", _llu(i+1), row);
+		fprintf (fp, "[%7llu] %s\n", _llu (i+1), row);
 	}
 
-	fprintf (fp, "\n%llu records\n", _llu(count));
+	fprintf (fp, "\n%llu records", _llu (count));
 
+        if (before && after) {
+                sec = after->tv_sec - before->tv_sec;
+                if (after->tv_usec < before->tv_usec) {
+                        sec -= 1;
+                        after->tv_usec += 1000000;
+                }
+                usec = after->tv_usec - before->tv_usec;
+
+                fprintf (fp, ", %llu.%06llu seconds",
+                         _llu (sec), _llu (usec));
+        }
+
+        fputc('\n', fp);
 out:
 	return 0;
 }
 
 static int process_query(char *line)
 {
-	int ret         = 0;
-        dict_t *cmd     = NULL;
-        dict_t *result  = NULL;
-
+	int ret               = 0;
+        dict_t *cmd           = NULL;
+        dict_t *result        = NULL;
+        struct timeval before = { 0, };
+        struct timeval after  = { 0, };
 
 	if (!cmd) {
 		cmd = dict_new ();
@@ -69,11 +88,15 @@ static int process_query(char *line)
 		ret = dict_set_str (cmd, "sql", line);
 	}
 
+        gettimeofday (&before, NULL);
+
 	ret = glfs_ipc (fs, IMESS_IPC_OP, cmd, &result);
         if (ret)
                 goto out;
 
-        print_result (stdout, result);
+        gettimeofday (&after, NULL);
+
+        print_result (stdout, result, &before, &after);
 
 out:
         if (result)
