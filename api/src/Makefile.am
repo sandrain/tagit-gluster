@@ -35,6 +35,7 @@ api_la_LIBADD = $(top_builddir)/libglusterfs/src/libglusterfs.la \
 	$(top_builddir)/rpc/xdr/src/libgfxdr.la \
 	$(top_builddir)/api/src/libgfapi.la
 
+## FIXME: to link dynamically?
 EXTRA_PROGRAMS = xfind
 
 xfind_SOURCES = xfind.c $(libgfapi_la_SOURCES)

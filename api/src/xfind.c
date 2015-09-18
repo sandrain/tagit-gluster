@@ -5,21 +5,20 @@
 #include "glfs-handles.h"
 #include <string.h>
 #include <time.h>
+#include <readline/readline.h>
+#include <readline/history.h>
 
 /* gluster internal headers */
 #undef _CONFIG_H
 #include "glusterfs.h"
 #include "xlator.h"
 
-#define PROMPT		"xfind> "
+#define PROMPT		"\nxfind> "
 #define	LINEBUFSIZE	4096
 
 static glfs_t *fs;
 static glfs_fd_t *fd;
 static char linebuf[LINEBUFSIZE];
-
-static dict_t *cmd;
-static dict_t *result;
 
 #ifndef _llu
 #define _llu(x)	((unsigned long long) (x))
@@ -28,6 +27,8 @@ static dict_t *result;
 static inline int print_result (FILE *fp, dict_t *xdata)
 {
 	int ret = 0;
+        int op_result = 0;
+        char *op_errmsg = NULL;
 	uint64_t i = 0;
 	uint64_t count = 0;
 	char keybuf[8] = { 0, };
@@ -38,37 +39,34 @@ static inline int print_result (FILE *fp, dict_t *xdata)
 		return -1;
 
 	for (i = 0; i < count; i++) {
-		sprintf(keybuf, "%llu", _llu(i));
+		sprintf (keybuf, "%llu", _llu(i));
 		ret = dict_get_str (xdata, keybuf, &row);
 
-		fprintf(fp, "[%7llu] %s\n", _llu(i+1), row);
+		fprintf (fp, "[%7llu] %s\n", _llu(i+1), row);
 	}
 
-	fprintf(fp, "\n%llu records\n", _llu(count));
+	fprintf (fp, "\n%llu records\n", _llu(count));
 
+out:
 	return 0;
 }
 
 static int process_query(char *line)
 {
-	int ret = 0;
+	int ret         = 0;
+        dict_t *cmd     = NULL;
+        dict_t *result  = NULL;
+
 
 	if (!cmd) {
-		cmd = dict_new();
+		cmd = dict_new ();
 		if (!cmd) {
 			ret = -1;
 			goto out;
 		}
 
-		ret = dict_set_str(cmd, "clients", "all");
-		ret = dict_set_str(cmd, "sql", line);
-
-		fd = glfs_opendir (fs, "/");
-		if (!fd) {
-			ret = -1;
-			goto out;
-		}
-                glfs_closedir (fd);
+		ret = dict_set_str (cmd, "clients", "all");
+		ret = dict_set_str (cmd, "sql", line);
 	}
 
 	ret = glfs_ipc (fs, IMESS_IPC_OP, cmd, &result);
@@ -78,12 +76,17 @@ static int process_query(char *line)
         print_result (stdout, result);
 
 out:
+        if (result)
+                dict_destroy (result);
+        if (cmd)
+                dict_destroy (cmd);
+
 	return ret;
 }
 
 static inline void welcome(void)
 {
-	printf("xfind version 0.0.x. 'quit' to finish, good luck!\n\n");
+	printf("xfind version 0.0.x. 'CTRL-D' to quit. good luck!\n");
 }
 
 static void xfind_shell(void)
@@ -91,17 +94,16 @@ static void xfind_shell(void)
 	int ret = 0;
 	char *line = NULL;
 
-	welcome();
+	welcome ();
 
 	while (1) {
-		fputs(PROMPT, stdout);
-		fflush(stdout);
+                line = readline (PROMPT);
+                if (!line)
+                        break;
 
-		line = fgets(linebuf, LINEBUFSIZE-1, stdin);
-		if (!line || !strncmp("quit", line, strlen("quit")))
-			break;
+                add_history (line);
 
-		if ((ret = process_query(line)) != 0)
+		if ((ret = process_query (line)) != 0)
 			break;
 	}
 
@@ -129,7 +131,7 @@ int main(int argc, char **argv)
 
         fprintf (stderr, "glfs_init: returned %d\n", ret);
 
-	xfind_shell();
+	xfind_shell ();
 
         glfs_fini (fs);
 
