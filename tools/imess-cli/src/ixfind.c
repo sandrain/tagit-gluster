@@ -16,9 +16,9 @@
 #include "glusterfs.h"
 #include "xlator.h"
 
-#include "xfind.h"
+#include "ixfind.h"
 
-#define PROMPT		"\nxfind> "
+#define PROMPT		"\nixfind> "
 #define	LINEBUFSIZE	4096
 
 static glfs_t *fs;
@@ -113,10 +113,10 @@ out:
 
 static inline void welcome(void)
 {
-        printf("xfind version 0.0.x. 'CTRL-D' to quit. good luck!\n");
+        printf("ixfind version 0.0.x. 'CTRL-D' to quit. good luck!\n");
 }
 
-static void xfind_shell(void)
+static void ixfind_shell(void)
 {
         int ret = 0;
         char *line = NULL;
@@ -159,7 +159,7 @@ int main(int argc, char **argv)
 
         fprintf (stderr, "glfs_init: returned %d\n", ret);
 
-        xfind_shell ();
+        ixfind_shell ();
 
         glfs_fini (fs);
 
