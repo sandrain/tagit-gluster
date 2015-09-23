@@ -1,15 +1,19 @@
-bin_PROGRAMS = ixfind
+bin_PROGRAMS = ixfind ixsql
 
 ixfind_SOURCES = ixfind.c
 
-noinst_HEADERS = ixfind.h
+noinst_HEADERS = ix-imess.h ixsql.h
 
-ixfind_LDADD = $(top_builddir)/libglusterfs/src/libglusterfs.la $(GF_LDADD) \
-	       $(RLLIBS) $(top_builddir)/rpc/xdr/src/libgfxdr.la \
-	       $(top_builddir)/rpc/rpc-lib/src/libgfrpc.la \
+ixfind_LDADD = $(top_builddir)/libglusterfs/src/libglusterfs.la \
 	       $(top_builddir)/api/src/libgfapi.la \
-	       $(XML_LIBS) \
-	       $(libgfapi_la_LIBADD) $(api_la_LIBADD)
+	       $(GF_LDADD) $(RLLIBS)
+
+ixsql_SOURCES = ixsql.c ixsql-cmd.c
+
+ixsql_LDADD = $(top_builddir)/libglusterfs/src/libglusterfs.la \
+	      $(top_builddir)/api/src/libgfapi.la \
+	      $(GF_LDADD) $(RLLIBS)
+
 
 AM_CPPFLAGS = $(GF_CPPFLAGS) -I$(top_srcdir)/libglusterfs/src \
 	      -I$(top_srcdir)/api/src
@@ -23,5 +27,4 @@ $(top_builddir)/libglusterfs/src/libglusterfs.la:
 
 $(top_builddir)/api/src/libgfapi.la:
 	$(MAKE) -C $(top_builddir)/api/src/ all
-
 
