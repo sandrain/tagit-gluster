@@ -26,10 +26,19 @@ struct _ixsql_query {
 
 typedef struct _ixsql_query ixsql_query_t;
 
+struct _ixsql_clients {
+	const char *name;
+	int         active;
+};
+
+typedef struct _ixsql_clients ixsql_clients_t;
+
 struct _ixsql_control {
-	glfs_t         *gluster;
-	FILE           *fp_output;
-	uint64_t        slice_count;
+	glfs_t          *gluster;
+	FILE            *fp_output;
+	uint64_t         slice_count;
+	uint32_t         num_clients;
+	ixsql_clients_t  clients[0];
 };
 
 typedef struct _ixsql_control ixsql_control_t;

@@ -37,6 +37,11 @@ static int ixsql_cmd_help (ixsql_control_t *ctl, int argc, char **argv)
 	return 0;
 }
 
+static int ixsql_cmd_quit (ixsql_control_t *ctl, int argc, char **argv)
+{
+	return IXSQL_QUIT;
+}
+
 static int ixsql_cmd_slice (ixsql_control_t *ctl, int argc, char **argv)
 {
 	switch (argc) {
@@ -62,9 +67,11 @@ static int ixsql_cmd_slice (ixsql_control_t *ctl, int argc, char **argv)
 	return 0;
 }
 
-static int ixsql_cmd_quit (ixsql_control_t *ctl, int argc, char **argv)
+static int ixsql_cmd_client (ixsql_control_t *ctl, int argc, char **argv)
 {
-	return IXSQL_QUIT;
+	fprintf (ctl->fp_output, "not implemented, yet\n");
+
+	return 0;
 }
 
 static ixsql_cmd_handler_t ixsql_handlers [] =
@@ -73,13 +80,17 @@ static ixsql_cmd_handler_t ixsql_handlers [] =
 	  .help = "Print the help message.",
 	  .func = ixsql_cmd_help,
 	},
-	{ .key	= ".slice",
-	  .help = "Print or set the query result slice count.",
-	  .func = ixsql_cmd_slice,
-	},
 	{ .key  = ".quit",
 	  .help = "Quit the program.",
 	  .func = ixsql_cmd_quit,
+	},
+	{ .key  = ".client",
+	  .help = "Print or set the clients to send queries.",
+	  .func = ixsql_cmd_client,
+	},
+	{ .key	= ".slice",
+	  .help = "Print or set the query result slice count.",
+	  .func = ixsql_cmd_slice,
 	},
 
 	{ 0, 0, 0 },
