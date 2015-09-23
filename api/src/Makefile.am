@@ -35,18 +35,6 @@ api_la_LIBADD = $(top_builddir)/libglusterfs/src/libglusterfs.la \
 	$(top_builddir)/rpc/xdr/src/libgfxdr.la \
 	$(top_builddir)/api/src/libgfapi.la
 
-EXTRA_PROGRAMS = xfind
-
-xfind_SOURCES = xfind.c $(libgfapi_la_SOURCES)
-
-xfind_CFLAGS = $(libgfapi_la_CPPFLAGS)
-
-xfind_LDADD = $(top_builddir)/libglusterfs/src/libglusterfs.la $(GF_LDADD) \
-		$(RLLIBS) $(top_builddir)/rpc/xdr/src/libgfxdr.la \
-		$(top_builddir)/rpc/rpc-lib/src/libgfrpc.la \
-		$(XML_LIBS) \
-		$(libgfapi_la_LIBADD) $(api_la_LIBADD)
-
 AM_CPPFLAGS = $(GF_CPPFLAGS) -I$(top_srcdir)/libglusterfs/src
 
 AM_CFLAGS = -Wall $(GF_CFLAGS)

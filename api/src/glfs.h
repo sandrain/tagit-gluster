@@ -774,7 +774,7 @@ glfs_fd_t *glfs_dup (glfs_fd_t *fd) __THROW
  * test script, and that doesn't need xdata.  Adding dict_t support and a new
  * header-file requirement doesn't seem worth it until the need is greater.
  */
-int glfs_ipc (glfs_fd_t *fd, int cmd, dict_t *in, dict_t **out) __THROW
+int glfs_ipc (glfs_t *fs, int cmd, dict_t *in, dict_t **out) __THROW
         GFAPI_PUBLIC(glfs_ipc, 3.7.0);
 
 __END_DECLS
