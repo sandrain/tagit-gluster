@@ -19,7 +19,6 @@
 
 static ixsql_control_t  control;
 
-
 static inline void welcome(void)
 {
         printf("ixsql version 0.0.x. 'CTRL-D' to quit. good luck!\n");
@@ -110,9 +109,18 @@ static struct option opts[] = {
 	{ 0, 0, 0, 0 },
 };
 
+static const char *usage_str = 
+"\n"
+"usage: xsql [options..] <volume id> <volume server>\n"
+"\n"
+"options:\n"
+"  --debug, -d      print log messages to stderr\n"
+"  --help, -h       this help message\n"
+"\n\n";
+
 static void print_usage (void)
 {
-	printf ("Usage: ixsql [OPTS] <volname> <hostname>\n\n");
+	fputs (usage_str, stdout);
 }
 
 static int print_debug;
@@ -131,7 +139,7 @@ int main(int argc, char **argv)
 		case 'h':
 		default:
 			print_usage ();
-			return 0;
+			return -1;
 		}
 	}
 
@@ -139,8 +147,7 @@ int main(int argc, char **argv)
 	argv += optind;
 
         if (argc != 3) {
-                printf ("Expect following args\n\t%s <volname> <hostname>\n",
-                                argv[0]);
+		print_usage ();
                 return -1;
         }
 
@@ -159,8 +166,6 @@ int main(int argc, char **argv)
 
 	control.gluster = fs;
 	control.fp_output = stdout;
-
-        fprintf (stderr, "glfs_init: returned %d\n", ret);
 
         ixsql_shell ();
 
