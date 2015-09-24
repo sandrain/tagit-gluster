@@ -65,6 +65,7 @@ unlink_from_xdb (ims_priv_t *priv, const char *path)
 	if (priv->async_update) {
 		ims_task_t task = { {0,0}, };
 
+		task.op = IMS_TASK_UNLINK_FILE;
 		task.file.path = path;
 
 		ret = ims_async_put_task (priv->async_ctx, &task);
@@ -435,6 +436,7 @@ ims_setattr_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 		ims_task_t task = { {0,0}, };
 
 		iatt_to_stat (postop, &task.sb);
+		task.op = IMS_TASK_UPDATE_STAT;
 		task.file.gfid = uuid_utoa (postop->ia_gfid);
 
 		ret = ims_async_put_task (priv->async_ctx, &task);
@@ -557,6 +559,7 @@ ims_link_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	if (priv->async_update) {
 		ims_task_t task = { {0,0}, };
 
+		task.op = IMS_TASK_LINK_FILE;
 		task.file.path = (char *) cookie;
 		task.file.gfid = uuid_utoa (buf->ia_gfid);
 
@@ -663,6 +666,7 @@ ims_rename_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	if (priv->async_update) {
 		ims_task_t task = { {0,0}, };
 
+		task.op = IMS_TASK_RENAME;
 		task.file.path = rename_data->old_path;
 		task.file.extra = (void *) rename_data->new_path;
 

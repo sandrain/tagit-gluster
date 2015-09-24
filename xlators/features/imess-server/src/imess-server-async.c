@@ -58,9 +58,49 @@ unlock:
 
 /*
  * thread working function
+ *
+ * any errors, we have no hope.
  */
+
+static inline int worker_insert_new_file (ims_async_t *self, ims_task_t *task)
+{
+	return ims_xdb_insert_new_file (self->xdb, &task->file, &task->sb);
+}
+
+static inline int worker_unlink_file (ims_async_t *self, ims_task_t *task)
+{
+	return ims_xdb_unlink_file (self->xdb, &task->file);
+}
+
+static inline int worker_update_stat (ims_async_t *self, ims_task_t *task)
+{
+	return ims_xdb_update_stat (self->xdb, &task->file, &task->sb,
+				    IMS_XDB_STAT_OP_ALL);
+}
+
+static inline int worker_link_file (ims_async_t *self, ims_task_t *task)
+{
+	return ims_xdb_link_file (self->xdb, &task->file);
+}
+
+static inline int worker_rename (ims_async_t *self, ims_task_t *task)
+{
+	return ims_xdb_rename (self->xdb, &task->file);
+}
+
+static inline int worker_insert_xattr (ims_async_t *self, ims_task_t *task)
+{
+	return 0;
+}
+
+static inline int worker_remove_xattr (ims_async_t *self, ims_task_t *task)
+{
+	return 0;
+}
+
 static void *ims_async_work (void *arg)
 {
+	int ret			= 0;
 	ims_async_t *self	= NULL;
 	ims_xdb_t *xdb 		= NULL;
 	ims_task_t *task	= NULL;
@@ -70,9 +110,37 @@ static void *ims_async_work (void *arg)
 
 	while (1) {
 		task = task_queue_fetch (self);
+		if (!task) {
+			usleep (5000);
+			continue;
+		}
 
-		/* TODO: update the xdb database */
-		usleep (2000);
+		switch (task->op) {
+		case IMS_TASK_INSERT_NEW_FILE:
+			ret = worker_insert_new_file (self, task);
+			break;
+		case IMS_TASK_UNLINK_FILE:
+			ret = worker_unlink_file (self, task);
+			break;
+		case IMS_TASK_UPDATE_STAT:
+			ret = worker_update_stat (self, task);
+			break;
+		case IMS_TASK_LINK_FILE:
+			ret = worker_link_file (self, task);
+			break;
+		case IMS_TASK_RENAME:
+			ret = worker_rename (self, task);
+			break;
+		case IMS_TASK_INSERT_XATTR:
+			ret = worker_insert_xattr (self, task);
+			break;
+		case IMS_TASK_REMOVE_XATTR:
+			ret = worker_remove_xattr (self, task);
+			break;
+		default:
+			/* how to report this? */
+			break;
+		}
 
 		GF_FREE (task);
 	}
