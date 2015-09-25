@@ -16,6 +16,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <stdint.h>
+#include <pthread.h>
 #include <sqlite3.h>
 
 #include "common-utils.h"
@@ -54,8 +55,8 @@ enum {
 };
 
 struct _ims_xdb {
-        sqlite3 *conn;		/* connection to the SQLite */
-        int      db_ret;	/* return value from SQLite */
+        sqlite3            *conn;       /* connection to the SQLite */
+        int                 db_ret;     /* return value from SQLite */
 };
 
 typedef struct _ims_xdb	ims_xdb_t;
@@ -78,10 +79,10 @@ struct _ims_xdb_attr {
 
 typedef struct _ims_xdb_attr ims_xdb_attr_t;
 
-#define __valptr(p, label)	do {			\
-		if ((p) == NULL)			\
-			goto label;			\
-	} while (0);
+#define __valptr(p, label)	do {                    \
+        if ((p) == NULL)                                \
+        goto label;                                     \
+} while (0);
 
 /*
  * ~API: not encouraged to be used directly from clients.
@@ -150,6 +151,36 @@ int ims_xdb_unlink_file (ims_xdb_t *xdb, ims_xdb_file_t *file);
 int ims_xdb_insert_stat (ims_xdb_t *xdb, ims_xdb_file_t *file,
                          struct stat *sb);
 
+static inline
+int ims_xdb_insert_new_file (ims_xdb_t *xdb, ims_xdb_file_t *file,
+			     struct stat *sb)
+{
+	int ret = -1;
+
+	__valptr (xdb, out);
+	__valptr (file, out);
+	__valptr (sb, out);
+
+	ims_xdb_tx_begin (xdb);
+
+	ret = ims_xdb_insert_gfid (xdb, file);
+	if (ret)
+		goto out;
+
+	ret = ims_xdb_insert_file (xdb, file);
+	if (ret)
+		goto out;
+
+	ret = ims_xdb_insert_stat (xdb, file, sb);
+out:
+	if (ret)
+		ims_xdb_tx_rollback (xdb);
+	else
+		ims_xdb_tx_commit (xdb);
+
+	return ret;
+}
+
 int ims_xdb_update_stat (ims_xdb_t *xdb, ims_xdb_file_t *file,
                          struct stat *sb, int op);
 
@@ -161,6 +192,7 @@ int ims_xdb_insert_xattr (ims_xdb_t *xdb, ims_xdb_file_t *file,
 int ims_xdb_remove_xattr (ims_xdb_t *xdb, ims_xdb_file_t *file,
                           const char *name);
 
+/* for now, this cannot be done asynchronously */
 int ims_xdb_direct_query (ims_xdb_t *xdb, const char *sql, dict_t *xdata);
 
 static inline const char *ims_xdb_errstr (int errcode)

@@ -25,51 +25,63 @@
 static int
 insert_new_xdb_entry (ims_priv_t *priv, struct iatt *buf, const char *path)
 {
-        int ret              = 0;
-        ims_xdb_t *xdb       = NULL;
-        ims_xdb_file_t  file = { 0, };
-        struct stat sb       = { 0, };
+	int ret              = 0;
 
-        xdb = priv->xdb;
+	if (priv->async_update) {
+		ims_task_t task = { {0,0}, };
 
-        file.gfid = uuid_utoa (buf->ia_gfid);
-        file.path = path;
+		task.op = IMS_TASK_INSERT_NEW_FILE;
 
-        ims_xdb_tx_begin (xdb);
+		task.file.gfid = uuid_utoa (buf->ia_gfid);
+		task.file.path = path;
 
-        ret = ims_xdb_insert_gfid (xdb, &file);
-        if (ret)
-                goto out;
+		iatt_to_stat (buf, &task.sb);
 
-        ret = ims_xdb_insert_file (xdb, &file);
-        if (ret)
-                goto out;
+		ret = ims_async_put_task (priv->async_ctx, &task);
+	}
+	else {
+		ims_xdb_file_t file = { 0, };
+		struct stat sb      = { 0, };
+		ims_xdb_t *xdb      = NULL;
 
-        iatt_to_stat (buf, &sb);
+		xdb = priv->xdb;
 
-        ret = ims_xdb_insert_stat (xdb, &file, &sb);
+		file.gfid = uuid_utoa (buf->ia_gfid);
+		file.path = path;
 
-out:
-        if (ret)
-                ims_xdb_tx_rollback (xdb);
-        else
-                ims_xdb_tx_commit (xdb);
+		iatt_to_stat (buf, &sb);
 
-        return ret;
+		ret = ims_xdb_insert_new_file (xdb, &file, &sb);
+	}
+
+	return ret;
 }
 
 static inline int
 unlink_from_xdb (ims_priv_t *priv, const char *path)
 {
-        int ret             = 0;
-        ims_xdb_t *xdb      = NULL;
-        ims_xdb_file_t file = { 0, };
+	int ret             = 0;
 
-        xdb = priv->xdb;
-        file.path = path;
+	if (priv->async_update) {
+		ims_task_t task = { {0,0}, };
 
-        ret = ims_xdb_unlink_file (xdb, &file);
-        return ret;
+		task.op = IMS_TASK_UNLINK_FILE;
+		task.file.path = path;
+
+		ret = ims_async_put_task (priv->async_ctx, &task);
+	}
+	else {
+		ims_xdb_file_t file = { 0, };
+		ims_xdb_t *xdb      = NULL;
+
+		xdb = priv->xdb;
+
+		file.path = path;
+
+		ret = ims_xdb_unlink_file (xdb, &file);
+	}
+
+	return ret;
 }
 
 /*
@@ -82,40 +94,40 @@ unlink_from_xdb (ims_priv_t *priv, const char *path)
 
 int32_t
 ims_mkdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
-               int32_t op_ret, int32_t op_errno,
-               inode_t *inode, struct iatt *buf,
-               struct iatt *preparent, struct iatt *postparent,
-               dict_t *xdata)
+	       int32_t op_ret, int32_t op_errno,
+	       inode_t *inode, struct iatt *buf,
+	       struct iatt *preparent, struct iatt *postparent,
+	       dict_t *xdata)
 {
-        int ret          = 0;
-        ims_priv_t *priv = NULL;
+	int ret          = 0;
+	ims_priv_t *priv = NULL;
 
-        if (op_ret == -1)
-                goto out;
+	if (op_ret == -1)
+		goto out;
 
-        priv = this->private;
-        ret = insert_new_xdb_entry (priv, buf, (const char *) cookie);
-        if (ret)
-                gf_log (this->name, GF_LOG_WARNING,
-                        "ims_mkdir_cbk: populate_xdb failed "
-                        "(ret=%d, db_ret=%d)",
-                        ret, priv->xdb->db_ret);
+	priv = this->private;
+	ret = insert_new_xdb_entry (priv, buf, (const char *) cookie);
+	if (ret)
+		gf_log (this->name, GF_LOG_WARNING,
+			"ims_mkdir_cbk: populate_xdb failed "
+			"(ret=%d, db_ret=%d)",
+			ret, priv->xdb->db_ret);
 
 out:
-        STACK_UNWIND_STRICT (mkdir, frame, op_ret, op_errno, inode, buf,
-                             preparent, postparent, xdata);
-        return 0;
+	STACK_UNWIND_STRICT (mkdir, frame, op_ret, op_errno, inode, buf,
+			     preparent, postparent, xdata);
+	return 0;
 }
 
 int32_t
 ims_mkdir (call_frame_t *frame, xlator_t *this, loc_t *loc, mode_t mode,
-           mode_t umask, dict_t *xdata)
+	   mode_t umask, dict_t *xdata)
 {
-        STACK_WIND_COOKIE (frame, ims_mkdir_cbk, (void *) loc->path,
-                           FIRST_CHILD (this),
-                           FIRST_CHILD (this)->fops->mkdir,
-                           loc, mode, umask, xdata);
-        return 0;
+	STACK_WIND_COOKIE (frame, ims_mkdir_cbk, (void *) loc->path,
+			   FIRST_CHILD (this),
+			   FIRST_CHILD (this)->fops->mkdir,
+			   loc, mode, umask, xdata);
+	return 0;
 }
 
 /*
@@ -123,40 +135,40 @@ ims_mkdir (call_frame_t *frame, xlator_t *this, loc_t *loc, mode_t mode,
  */
 int32_t
 ims_unlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
-                  int32_t op_ret, int32_t op_errno,
-                  struct iatt *preparent, struct iatt *postparent,
-                  dict_t *xdata)
+		int32_t op_ret, int32_t op_errno,
+		struct iatt *preparent, struct iatt *postparent,
+		dict_t *xdata)
 {
-        int ret             = 0;
-        ims_priv_t *priv    = NULL;
+	int ret             = 0;
+	ims_priv_t *priv    = NULL;
 
-        if (op_ret == -1)
-                goto out;
+	if (op_ret == -1)
+		goto out;
 
-        priv = this->private;
+	priv = this->private;
 
-        ret = unlink_from_xdb (priv, cookie);
-        if (ret)
-                gf_log (this->name, GF_LOG_WARNING,
-                        "ims_unlink_cbk: xdb_remove_file failed "
-                        "(ret=%d, db_ret=%d)",
-                        ret, priv->xdb->db_ret);
+	ret = unlink_from_xdb (priv, cookie);
+	if (ret)
+		gf_log (this->name, GF_LOG_WARNING,
+			"ims_unlink_cbk: xdb_remove_file failed "
+			"(ret=%d, db_ret=%d)",
+			ret, priv->xdb->db_ret);
 
 out:
-        STACK_UNWIND_STRICT (unlink, frame, op_ret, op_errno,
-                             preparent, postparent, xdata);
-        return 0;
+	STACK_UNWIND_STRICT (unlink, frame, op_ret, op_errno,
+			     preparent, postparent, xdata);
+	return 0;
 }
 
 int32_t
 ims_unlink (call_frame_t *frame, xlator_t *this, loc_t *loc, int xflag,
-            dict_t *xdata)
+	    dict_t *xdata)
 {
-        STACK_WIND_COOKIE (frame, ims_unlink_cbk, (void *) loc->path,
-                           FIRST_CHILD (this),
-                           FIRST_CHILD (this)->fops->unlink,
-                           loc, xflag, xdata);
-        return 0;
+	STACK_WIND_COOKIE (frame, ims_unlink_cbk, (void *) loc->path,
+			   FIRST_CHILD (this),
+			   FIRST_CHILD (this)->fops->unlink,
+			   loc, xflag, xdata);
+	return 0;
 }
 
 /*
@@ -167,39 +179,39 @@ ims_unlink (call_frame_t *frame, xlator_t *this, loc_t *loc, int xflag,
 
 int32_t
 ims_rmdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
-               int32_t op_ret, int32_t op_errno,
-               struct iatt *preparent, struct iatt *postparent,
-               dict_t *xdata)
+	       int32_t op_ret, int32_t op_errno,
+	       struct iatt *preparent, struct iatt *postparent,
+	       dict_t *xdata)
 {
-        int ret             = 0;
-        ims_priv_t *priv    = NULL;
+	int ret             = 0;
+	ims_priv_t *priv    = NULL;
 
-        if (op_ret == -1)
-                goto out;
+	if (op_ret == -1)
+		goto out;
 
-        priv = this->private;
-        ret = unlink_from_xdb (priv, cookie);
-        if (ret)
-                gf_log (this->name, GF_LOG_WARNING,
-                        "ims_rmdir_cbk: xdb_remove_file failed "
-                        "(ret=%d, db_ret=%d)",
-                        ret, priv->xdb->db_ret);
+	priv = this->private;
+	ret = unlink_from_xdb (priv, cookie);
+	if (ret)
+		gf_log (this->name, GF_LOG_WARNING,
+			"ims_rmdir_cbk: xdb_remove_file failed "
+			"(ret=%d, db_ret=%d)",
+			ret, priv->xdb->db_ret);
 
 out:
-        STACK_UNWIND_STRICT (rmdir, frame, op_ret, op_errno,
-                            preparent, postparent, xdata);
-        return 0;
+	STACK_UNWIND_STRICT (rmdir, frame, op_ret, op_errno,
+			     preparent, postparent, xdata);
+	return 0;
 }
 
 int32_t
 ims_rmdir (call_frame_t *frame, xlator_t *this, loc_t *loc, int flags,
-           dict_t *xdata)
+	   dict_t *xdata)
 {
-        STACK_WIND_COOKIE (frame, ims_rmdir_cbk, (void *) loc->path,
-                           FIRST_CHILD(this),
-                           FIRST_CHILD(this)->fops->rmdir,
-                           loc, flags, xdata);
-        return 0;
+	STACK_WIND_COOKIE (frame, ims_rmdir_cbk, (void *) loc->path,
+			   FIRST_CHILD(this),
+			   FIRST_CHILD(this)->fops->rmdir,
+			   loc, flags, xdata);
+	return 0;
 }
 
 /*
@@ -208,8 +220,8 @@ ims_rmdir (call_frame_t *frame, xlator_t *this, loc_t *loc, int flags,
 
 #if 0
 struct _ims_setxattr_handler_data {
-        ims_xdb_t      *xdb;
-        ims_xdb_file_t *file;
+	ims_xdb_t      *xdb;
+	ims_xdb_file_t *file;
 };
 
 typedef struct _ims_xattr_handler_data ims_setxattr_handler_data_t;
@@ -217,126 +229,126 @@ typedef struct _ims_xattr_handler_data ims_setxattr_handler_data_t;
 static inline int
 parse_value_type (data_t *v)
 {
-        int i        = 0;
-        int32_t len  = 0;
-        char *data   = NULL;
-        int type     = IMS_XDB_TYPE_NONE;
+	int i        = 0;
+	int32_t len  = 0;
+	char *data   = NULL;
+	int type     = IMS_XDB_TYPE_NONE;
 
-        data = (char *) data_to_ptr (v);
-        len = v->len;
+	data = (char *) data_to_ptr (v);
+	len = v->len;
 
-        if (data[0] != '-' || isdigit (data[0]))
-                goto try_string;
+	if (data[0] != '-' || isdigit (data[0]))
+		goto try_string;
 
-        for (i = 1; i < len; i++) {
-                if (!isdigit (data[i]))
-                        goto try_string;
-        }
+	for (i = 1; i < len; i++) {
+		if (!isdigit (data[i]))
+			goto try_string;
+	}
 
-        type = IMS_XDB_TYPE_INTEGER;
-        goto out;
+	type = IMS_XDB_TYPE_INTEGER;
+	goto out;
 
 try_string:
-        for (i = 0; i < len; i++) {
-                if (!isprint (data[i]))
-                        goto out;
-        }
+	for (i = 0; i < len; i++) {
+		if (!isprint (data[i]))
+			goto out;
+	}
 
-        type = IMS_XDB_TYPE_STRING;
+	type = IMS_XDB_TYPE_STRING;
 
 out:
-        return type;
+	return type;
 }
 
 static int
 handle_setxattr_kv (dict_t *dict, char *k, data_t *v, void *tmp)
 {
-        int ret                           = 0;
-        int type                          = 0;
-        ims_xdb_t *xdb                    = NULL;
-        ims_xdb_file_t *file              = NULL;
-        ims_xdb_attr_t xattr              = { 0, };
-        ims_setxattr_handler_data_t *data = NULL;
+	int ret                           = 0;
+	int type                          = 0;
+	ims_xdb_t *xdb                    = NULL;
+	ims_xdb_file_t *file              = NULL;
+	ims_xdb_attr_t xattr              = { 0, };
+	ims_setxattr_handler_data_t *data = NULL;
 
-        if (XATTR_IS_PATHINFO (k))
-                goto out;
-        else if (ZR_FILE_CONTENT_REQUEST (k))
-                goto out;
-        else if (GF_POSIX_ACL_REQUEST (k))
-                goto out;
+	if (XATTR_IS_PATHINFO (k))
+		goto out;
+	else if (ZR_FILE_CONTENT_REQUEST (k))
+		goto out;
+	else if (GF_POSIX_ACL_REQUEST (k))
+		goto out;
 
-        data = (ims_setxattr_handler_data_t *) tmp;
+	data = (ims_setxattr_handler_data_t *) tmp;
 
-        type = parse_value_type (v);
-        if (type == IMS_XDB_TYPE_NONE)
-                goto out;
+	type = parse_value_type (v);
+	if (type == IMS_XDB_TYPE_NONE)
+		goto out;
 
-        xdb = data->xdb;
-        file = data->file;
+	xdb = data->xdb;
+	file = data->file;
 
-        xattr.name = k;
-        xattr.type = type;
+	xattr.name = k;
+	xattr.type = type;
 
-        if (type == IMS_XDB_TYPE_INTEGER)
-                xattr.ival = data_to_int64 (v);
-        else
-                xattr.sval = data_to_str (v);
+	if (type == IMS_XDB_TYPE_INTEGER)
+		xattr.ival = data_to_int64 (v);
+	else
+		xattr.sval = data_to_str (v);
 
-        ret = ims_xdb_insert_xattr (xdb, file, &xattr, 1);
-        if (ret)
-                gf_log (this->name, GF_LOG_WARNING,
-                        "ims_setxattr_cbk: ims_xdb_insert_xattr failed "
-                        "(ret=%d, db_ret=%d)",
-                        ret, priv->xdb->db_ret);
+	ret = ims_xdb_insert_xattr (xdb, file, &xattr, 1);
+	if (ret)
+		gf_log (this->name, GF_LOG_WARNING,
+				"ims_setxattr_cbk: ims_xdb_insert_xattr failed "
+				"(ret=%d, db_ret=%d)",
+				ret, priv->xdb->db_ret);
 
 out:
-        return 0;
+	return 0;
 }
 
 int32_t
 ims_setxattr_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
-                  int32_t op_ret, int32_t op_errno, dict_t *xdata)
+		  int32_t op_ret, int32_t op_errno, dict_t *xdata)
 {
-        int ret                                 = 0;
-        ims_priv_t *priv                        = NULL;
-        ims_xdb_file_t file                     = { 0, };
-        ims_setxattr_handler_data_t filler_data = { 0, };
+	int ret                                 = 0;
+	ims_priv_t *priv                        = NULL;
+	ims_xdb_file_t file                     = { 0, };
+	ims_setxattr_handler_data_t filler_data = { 0, };
 
-        if (op_ret == -1)
-                goto out;
+	if (op_ret == -1)
+		goto out;
 
-        priv = this->private;
-        file.gfid = cookie;
+	priv = this->private;
+	file.gfid = cookie;
 
-        filler_data->xdb  = priv->xdb;
-        filler_data->file = &file;
+	filler_data->xdb  = priv->xdb;
+	filler_data->file = &file;
 
-        ret = dict_foreach (xdata, handle_setxattr_kv, &filler_data);
-        if (ret)
-                gf_log (this->name, GF_LOG_WARNING,
-                        "ims_setxattr_cbk: handle_setxattr_kv failed "
-                        "(ret=%d, db_ret=%d)",
-                        ret, priv->xdb->db_ret);
+	ret = dict_foreach (xdata, handle_setxattr_kv, &filler_data);
+	if (ret)
+		gf_log (this->name, GF_LOG_WARNING,
+				"ims_setxattr_cbk: handle_setxattr_kv failed "
+				"(ret=%d, db_ret=%d)",
+				ret, priv->xdb->db_ret);
 
 out:
-        STACK_UNWIND_STRICT (setxattr, frame, op_ret, op_errno, xdata);
-        return 0;
+	STACK_UNWIND_STRICT (setxattr, frame, op_ret, op_errno, xdata);
+	return 0;
 }
 
 
 int32_t
 ims_setxattr (call_frame_t *frame, xlator_t *this,
-              loc_t *loc, dict_t *dict, int flags, dict_t *xdata)
+	      loc_t *loc, dict_t *dict, int flags, dict_t *xdata)
 {
-        void *cookie = NULL;
+	void *cookie = NULL;
 
-        cookie = uuid_utoa (loc->inode->gfid);
+	cookie = uuid_utoa (loc->inode->gfid);
 
-        STACK_WIND_COOKIE (frame, ims_setxattr_cbk, cookie,
-                           FIRST_CHILD (this),
-                           FIRST_CHILD (this)->fops->setxattr,
-                           loc, dict, flags, xdata);
-        return 0;
+	STACK_WIND_COOKIE (frame, ims_setxattr_cbk, cookie,
+			FIRST_CHILD (this),
+			FIRST_CHILD (this)->fops->setxattr,
+			loc, dict, flags, xdata);
+	return 0;
 }
 #endif
 
@@ -345,18 +357,18 @@ ims_setxattr (call_frame_t *frame, xlator_t *this,
  */
 int
 ims_setattr_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
-                 int32_t op_ret, int32_t op_errno,
-                 struct iatt *preop, struct iatt *postop, dict_t *xdata);
+		 int32_t op_ret, int32_t op_errno,
+		 struct iatt *preop, struct iatt *postop, dict_t *xdata);
 
 int32_t
 ims_ftruncate (call_frame_t *frame, xlator_t *this,
-               fd_t *fd, off_t offset, dict_t *xdata)
+	       fd_t *fd, off_t offset, dict_t *xdata)
 {
-        STACK_WIND (frame, ims_setattr_cbk,
-                    FIRST_CHILD(this),
-                    FIRST_CHILD(this)->fops->ftruncate,
-                    fd, offset, xdata);
-        return 0;
+	STACK_WIND (frame, ims_setattr_cbk,
+		    FIRST_CHILD(this),
+		    FIRST_CHILD(this)->fops->ftruncate,
+		    fd, offset, xdata);
+	return 0;
 }
 
 /*
@@ -365,41 +377,41 @@ ims_ftruncate (call_frame_t *frame, xlator_t *this,
 
 int32_t
 ims_create_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
-                int32_t op_ret, int32_t op_errno,
-                fd_t *fd, inode_t *inode, struct iatt *buf,
-                struct iatt *preparent, struct iatt *postparent,
-                dict_t *xdata)
+		int32_t op_ret, int32_t op_errno,
+		fd_t *fd, inode_t *inode, struct iatt *buf,
+		struct iatt *preparent, struct iatt *postparent,
+		dict_t *xdata)
 {
-        int ret            = 0;
-        ims_priv_t *priv = NULL;
+	int ret            = 0;
+	ims_priv_t *priv = NULL;
 
-        if (op_ret == -1)
-                goto out;
+	if (op_ret == -1)
+		goto out;
 
-        priv = this->private;
+	priv = this->private;
 
-        ret = insert_new_xdb_entry (priv, buf, (const char *) cookie);
-        if (ret)
-                gf_log (this->name, GF_LOG_WARNING,
-                        "ims_create_cbk: populate_xdb failed "
-                        "(ret=%d, db_ret=%d)",
-                        ret, priv->xdb->db_ret);
+	ret = insert_new_xdb_entry (priv, buf, (const char *) cookie);
+	if (ret)
+		gf_log (this->name, GF_LOG_WARNING,
+			"ims_create_cbk: populate_xdb failed "
+			"(ret=%d, db_ret=%d)",
+			ret, priv->xdb->db_ret);
 
 out:
-        STACK_UNWIND_STRICT (create, frame, op_ret, op_errno, fd, inode, buf,
-                             preparent, postparent, xdata);
-        return 0;
+	STACK_UNWIND_STRICT (create, frame, op_ret, op_errno, fd, inode, buf,
+			preparent, postparent, xdata);
+	return 0;
 }
 
 int32_t
 ims_create (call_frame_t *frame, xlator_t *this, loc_t *loc, int32_t flags,
-            mode_t mode, mode_t umask, fd_t *fd, dict_t *xdata)
+	    mode_t mode, mode_t umask, fd_t *fd, dict_t *xdata)
 {
-        STACK_WIND_COOKIE (frame, ims_create_cbk, (void *) loc->path,
-                           FIRST_CHILD (this),
-                           FIRST_CHILD( this)->fops->create,
-                           loc, flags, mode, umask, fd, xdata);
-        return 0;
+	STACK_WIND_COOKIE (frame, ims_create_cbk, (void *) loc->path,
+			   FIRST_CHILD (this),
+			   FIRST_CHILD( this)->fops->create,
+			   loc, flags, mode, umask, fd, xdata);
+	return 0;
 }
 
 /*
@@ -408,46 +420,61 @@ ims_create (call_frame_t *frame, xlator_t *this, loc_t *loc, int32_t flags,
 
 int
 ims_setattr_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
-                 int32_t op_ret, int32_t op_errno,
-                 struct iatt *preop, struct iatt *postop, dict_t *xdata)
+		 int32_t op_ret, int32_t op_errno,
+		 struct iatt *preop, struct iatt *postop, dict_t *xdata)
 {
-        int ret             = 0;
-        struct stat sb      = { 0, };
-        ims_priv_t *priv    = NULL;
-        ims_xdb_t *xdb      = NULL;
-        ims_xdb_file_t file = { 0, };
+	int ret             = 0;
+	ims_priv_t *priv    = NULL;
+	ims_xdb_t *xdb      = NULL;
 
-        if (op_ret == -1)
-                goto out;
+	if (op_ret == -1)
+		goto out;
 
-        priv = this->private;
-        xdb = priv->xdb;
-        iatt_to_stat (postop, &sb);
+	priv = this->private;
 
-        file.gfid = uuid_utoa (postop->ia_gfid);
+	if (priv->async_update) {
+		ims_task_t task = { {0,0}, };
 
-        ret = ims_xdb_update_stat (xdb, &file, &sb, IMS_XDB_STAT_OP_WRITE);
-        if (ret)
-                gf_log (this->name, GF_LOG_WARNING,
-                        "ims_setattr_cbk: ims_xdb_update_stat failed "
-                        "(ret=%d, db_ret=%d)",
-                        ret, xdb->db_ret);
+		iatt_to_stat (postop, &task.sb);
+		task.op = IMS_TASK_UPDATE_STAT;
+		task.file.gfid = uuid_utoa (postop->ia_gfid);
+
+		ret = ims_async_put_task (priv->async_ctx, &task);
+	}
+	else {
+		struct stat sb      = { 0, };
+		ims_xdb_file_t file = { 0, };
+
+		xdb = priv->xdb;
+		iatt_to_stat (postop, &sb);
+
+		file.gfid = uuid_utoa (postop->ia_gfid);
+
+		ret = ims_xdb_update_stat (xdb, &file, &sb,
+					   IMS_XDB_STAT_OP_WRITE);
+	}
+
+	if (ret)
+		gf_log (this->name, GF_LOG_WARNING,
+			"ims_setattr_cbk: ims_xdb_update_stat failed "
+			"(ret=%d, db_ret=%d)",
+			ret, xdb->db_ret);
 
 out:
-        STACK_UNWIND_STRICT (setattr, frame, op_ret, op_errno,
-                             preop, postop, xdata);
-        return 0;
+	STACK_UNWIND_STRICT (setattr, frame, op_ret, op_errno,
+			preop, postop, xdata);
+	return 0;
 }
 
 int32_t
 ims_setattr (call_frame_t *frame, xlator_t *this,
-             loc_t *loc, struct iatt *stbuf, int32_t valid, dict_t *xdata)
+	     loc_t *loc, struct iatt *stbuf, int32_t valid, dict_t *xdata)
 {
-        STACK_WIND (frame, ims_setattr_cbk,
-                    FIRST_CHILD(this),
-                    FIRST_CHILD(this)->fops->setattr,
-                    loc, stbuf, valid, xdata);
-        return 0;
+	STACK_WIND (frame, ims_setattr_cbk,
+		    FIRST_CHILD(this),
+		    FIRST_CHILD(this)->fops->setattr,
+		    loc, stbuf, valid, xdata);
+	return 0;
 }
 
 /*
@@ -456,13 +483,13 @@ ims_setattr (call_frame_t *frame, xlator_t *this,
 
 int32_t
 ims_fsetattr (call_frame_t *frame, xlator_t *this,
-              fd_t *fd, struct iatt *stbuf, int32_t valid, dict_t *xdata)
+	      fd_t *fd, struct iatt *stbuf, int32_t valid, dict_t *xdata)
 {
-        STACK_WIND (frame, ims_setattr_cbk,
-                    FIRST_CHILD (this),
-                    FIRST_CHILD (this)->fops->fsetattr,
-                    fd, stbuf, valid, xdata);
-        return 0;
+	STACK_WIND (frame, ims_setattr_cbk,
+		    FIRST_CHILD (this),
+		    FIRST_CHILD (this)->fops->fsetattr,
+		    fd, stbuf, valid, xdata);
+	return 0;
 }
 
 /*
@@ -471,42 +498,42 @@ ims_fsetattr (call_frame_t *frame, xlator_t *this,
 
 int32_t
 ims_symlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
-                   int32_t op_ret, int32_t op_errno,
-                   inode_t *inode, struct iatt *buf,
-                   struct iatt *preparent, struct iatt *postparent,
-                   dict_t *xdata)
+		 int32_t op_ret, int32_t op_errno,
+		 inode_t *inode, struct iatt *buf,
+		 struct iatt *preparent, struct iatt *postparent,
+		 dict_t *xdata)
 {
-        int ret          = 0;
-        ims_priv_t *priv = NULL;
+	int ret          = 0;
+	ims_priv_t *priv = NULL;
 
-        if (op_ret == -1)
-                goto out;
+	if (op_ret == -1)
+		goto out;
 
-        priv = this->private;
+	priv = this->private;
 
-        ret = insert_new_xdb_entry (priv, buf, (const char *) cookie);
-        if (ret)
-                gf_log (this->name, GF_LOG_WARNING,
-                        "ims_symlink_cbk: populate_xdb failed "
-                        "(ret=%d, db_ret=%d)",
-                        ret, priv->xdb->db_ret);
+	ret = insert_new_xdb_entry (priv, buf, (const char *) cookie);
+	if (ret)
+		gf_log (this->name, GF_LOG_WARNING,
+			"ims_symlink_cbk: populate_xdb failed "
+			"(ret=%d, db_ret=%d)",
+			ret, priv->xdb->db_ret);
 
 out:
-        STACK_UNWIND_STRICT (symlink, frame, op_ret, op_errno, inode, buf,
-                             preparent, postparent, xdata);
-        return 0;
+	STACK_UNWIND_STRICT (symlink, frame, op_ret, op_errno, inode, buf,
+			     preparent, postparent, xdata);
+	return 0;
 }
 
 
 int32_t
 ims_symlink (call_frame_t *frame, xlator_t *this, const char *linkpath,
-               loc_t *loc, mode_t umask, dict_t *xdata)
+	     loc_t *loc, mode_t umask, dict_t *xdata)
 {
-        STACK_WIND_COOKIE (frame, ims_symlink_cbk, (void *) loc->path,
-                           FIRST_CHILD (this),
-                           FIRST_CHILD (this)->fops->symlink,
-                           linkpath, loc, umask, xdata);
-        return 0;
+	STACK_WIND_COOKIE (frame, ims_symlink_cbk, (void *) loc->path,
+			   FIRST_CHILD (this),
+			   FIRST_CHILD (this)->fops->symlink,
+			   linkpath, loc, umask, xdata);
+	return 0;
 }
 
 /*
@@ -515,47 +542,61 @@ ims_symlink (call_frame_t *frame, xlator_t *this, const char *linkpath,
 
 int32_t
 ims_link_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
-              int32_t op_ret, int32_t op_errno,
-              inode_t *inode, struct iatt *buf,
-              struct iatt *preparent, struct iatt *postparent,
-              dict_t *xdata)
+	      int32_t op_ret, int32_t op_errno,
+	      inode_t *inode, struct iatt *buf,
+	      struct iatt *preparent, struct iatt *postparent,
+	      dict_t *xdata)
 {
-        int ret             = 0;
-        ims_priv_t *priv    = NULL;
-        ims_xdb_t *xdb      = NULL;
-        ims_xdb_file_t file = { 0, };
+	int ret             = 0;
+	ims_priv_t *priv    = NULL;
+	ims_xdb_t *xdb      = NULL;
 
-        if (op_ret == -1)
-                goto out;
+	if (op_ret == -1)
+		goto out;
 
-        priv = this->private;
-        xdb = priv->xdb;
+	priv = this->private;
 
-        file.path = (char *) cookie;
-        file.gfid = uuid_utoa (buf->ia_gfid);
+	if (priv->async_update) {
+		ims_task_t task = { {0,0}, };
 
-        ret = ims_xdb_link_file (xdb, &file);
-        if (ret)
-                gf_log (this->name, GF_LOG_WARNING,
-                        "ims_link_cbk: ims_xdb_link_file failed "
-                        "(ret=%d, db_ret=%d)",
-                        ret, xdb->db_ret);
+		task.op = IMS_TASK_LINK_FILE;
+		task.file.path = (char *) cookie;
+		task.file.gfid = uuid_utoa (buf->ia_gfid);
+
+		ret = ims_async_put_task (priv->async_ctx, &task);
+	}
+	else {
+		ims_xdb_file_t file = { 0, };
+
+		xdb = priv->xdb;
+
+		file.path = (char *) cookie;
+		file.gfid = uuid_utoa (buf->ia_gfid);
+
+		ret = ims_xdb_link_file (xdb, &file);
+	}
+
+	if (ret)
+		gf_log (this->name, GF_LOG_WARNING,
+			"ims_link_cbk: ims_xdb_link_file failed "
+			"(ret=%d, db_ret=%d)",
+			ret, xdb->db_ret);
 
 out:
-        STACK_UNWIND_STRICT (link, frame, op_ret, op_errno, inode, buf,
-                             preparent, postparent, xdata);
-        return 0;
+	STACK_UNWIND_STRICT (link, frame, op_ret, op_errno, inode, buf,
+			     preparent, postparent, xdata);
+	return 0;
 }
 
 int32_t
 ims_link (call_frame_t *frame, xlator_t *this,
-          loc_t *oldloc, loc_t *newloc, dict_t *xdata)
+	  loc_t *oldloc, loc_t *newloc, dict_t *xdata)
 {
-        STACK_WIND_COOKIE (frame, ims_link_cbk, (void *) newloc->path,
-                           FIRST_CHILD (this),
-                           FIRST_CHILD (this)->fops->link,
-                           oldloc, newloc, xdata);
-        return 0;
+	STACK_WIND_COOKIE (frame, ims_link_cbk, (void *) newloc->path,
+			   FIRST_CHILD (this),
+			   FIRST_CHILD (this)->fops->link,
+			   oldloc, newloc, xdata);
+	return 0;
 }
 
 /*
@@ -564,13 +605,13 @@ ims_link (call_frame_t *frame, xlator_t *this,
 
 int32_t
 ims_truncate (call_frame_t *frame, xlator_t *this,
-              loc_t *loc, off_t offset, dict_t *xdata)
+	      loc_t *loc, off_t offset, dict_t *xdata)
 {
-        STACK_WIND (frame, ims_setattr_cbk,
-                    FIRST_CHILD(this),
-                    FIRST_CHILD(this)->fops->truncate,
-                    loc, offset, xdata);
-        return 0;
+	STACK_WIND (frame, ims_setattr_cbk,
+		    FIRST_CHILD(this),
+		    FIRST_CHILD(this)->fops->truncate,
+		    loc, offset, xdata);
+	return 0;
 }
 
 /*
@@ -579,15 +620,15 @@ ims_truncate (call_frame_t *frame, xlator_t *this,
 
 int32_t
 ims_writev (call_frame_t *frame, xlator_t *this,
-            fd_t *fd, struct iovec *vector,
-            int32_t count, off_t offset,
-            uint32_t flags, struct iobref *iobref, dict_t *xdata)
+	    fd_t *fd, struct iovec *vector,
+	    int32_t count, off_t offset,
+	    uint32_t flags, struct iobref *iobref, dict_t *xdata)
 {
-        STACK_WIND (frame, ims_setattr_cbk,
-                    FIRST_CHILD(this),
-                    FIRST_CHILD(this)->fops->writev,
-                    fd, vector, count, offset, flags, iobref, xdata);
-        return 0;
+	STACK_WIND (frame, ims_setattr_cbk,
+		    FIRST_CHILD(this),
+		    FIRST_CHILD(this)->fops->writev,
+		    fd, vector, count, offset, flags, iobref, xdata);
+	return 0;
 }
 
 /*
@@ -595,75 +636,88 @@ ims_writev (call_frame_t *frame, xlator_t *this,
  */
 
 struct _ims_rename_data {
-        char *old_path;
-        char *new_path;
+	char *old_path;
+	char *new_path;
 };
 
 typedef struct _ims_rename_data ims_rename_data_t;
 
 int32_t
 ims_rename_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
-                int32_t op_ret, int32_t op_errno, struct iatt *buf,
-                struct iatt *preoldparent, struct iatt *postoldparent,
-                struct iatt *prenewparent, struct iatt *postnewparent,
-                dict_t *xdata)
+		int32_t op_ret, int32_t op_errno, struct iatt *buf,
+		struct iatt *preoldparent, struct iatt *postoldparent,
+		struct iatt *prenewparent, struct iatt *postnewparent,
+		dict_t *xdata)
 {
-        int ret                        = 0;
-        ims_priv_t *priv               = NULL;
-        ims_xdb_t *xdb                 = NULL;
-        ims_xdb_file_t file            = { 0, };
-        ims_rename_data_t *rename_data = NULL;
+	int ret                        = 0;
+	ims_priv_t *priv               = NULL;
+	ims_xdb_t *xdb                 = NULL;
+	ims_rename_data_t *rename_data = NULL;
 
-        if (op_ret == -1)
-                goto out;
+	if (op_ret == -1)
+		goto out;
 
-        if (cookie == NULL)
-                goto out;
+	if (cookie == NULL)
+		goto out;
 
-        priv = this->private;
-        xdb = priv->xdb;
+	priv = this->private;
+	rename_data = cookie;
 
-        rename_data = cookie;
+	if (priv->async_update) {
+		ims_task_t task = { {0,0}, };
 
-        file.path = rename_data->old_path;
-        file.extra = (void *) rename_data->new_path;
+		task.op = IMS_TASK_RENAME;
+		task.file.path = rename_data->old_path;
+		task.file.extra = (void *) rename_data->new_path;
 
-        ret = ims_xdb_rename (xdb, &file);
-        if (ret)
-                gf_log (this->name, GF_LOG_WARNING,
-                        "ims_rename_cbk: ims_xdb_rename failed "
-                        "(ret=%d, db_ret=%d))",
-                        ret, xdb->db_ret);
+		ret = ims_async_put_task (priv->async_ctx, &task);
+	}
+	else {
+		ims_xdb_file_t file            = { 0, };
+
+		xdb = priv->xdb;
+
+		file.path = rename_data->old_path;
+		file.extra = (void *) rename_data->new_path;
+
+		ret = ims_xdb_rename (xdb, &file);
+	}
+
+	if (ret)
+		gf_log (this->name, GF_LOG_WARNING,
+			"ims_rename_cbk: ims_xdb_rename failed "
+			"(ret=%d, db_ret=%d))",
+			ret, xdb->db_ret);
 
 out:
-        FREE (cookie);
-        STACK_UNWIND_STRICT (rename, frame, op_ret, op_errno, buf,
-                             preoldparent, postoldparent,
-                             prenewparent, postnewparent, xdata);
-        return 0;
+	FREE (cookie);
+	STACK_UNWIND_STRICT (rename, frame, op_ret, op_errno, buf,
+			     preoldparent, postoldparent,
+			     prenewparent, postnewparent, xdata);
+	return 0;
 }
 
 int32_t
 ims_rename (call_frame_t *frame, xlator_t *this,
-            loc_t *oldloc, loc_t *newloc, dict_t *xdata)
+	    loc_t *oldloc, loc_t *newloc, dict_t *xdata)
 {
-        ims_rename_data_t *rename_data = NULL;
+	ims_rename_data_t *rename_data = NULL;
 
-        rename_data = CALLOC (1, sizeof(*rename_data));
-        if (!rename_data) {
-                gf_log (this->name, GF_LOG_WARNING,
-                        "ims_rename: CALLOC failed");
-                goto out;
-        }
+	rename_data = CALLOC (1, sizeof(*rename_data));
+	if (!rename_data) {
+		gf_log (this->name, GF_LOG_WARNING,
+			"ims_rename: CALLOC failed");
+		goto out;
+	}
 
-        rename_data->old_path = (char *) oldloc->path;
-        rename_data->new_path = (char *) newloc->path;
+	rename_data->old_path = (char *) oldloc->path;
+	rename_data->new_path = (char *) newloc->path;
 out:
-        STACK_WIND_COOKIE (frame, ims_rename_cbk, (void *) rename_data,
-                           FIRST_CHILD (this),
-                           FIRST_CHILD (this)->fops->rename,
-                           oldloc, newloc, xdata);
-        return 0;
+	STACK_WIND_COOKIE (frame, ims_rename_cbk, (void *) rename_data,
+			   FIRST_CHILD (this),
+			   FIRST_CHILD (this)->fops->rename,
+			   oldloc, newloc, xdata);
+	return 0;
 }
 
 /*
@@ -685,53 +739,53 @@ int32_t
 ims_ipc (call_frame_t *frame, xlator_t *this, int op, dict_t *xdata)
 {
 	int op_ret       = -1;
-        int op_errno     = 0;
-        ims_priv_t *priv = NULL;
-        ims_xdb_t *xdb   = NULL;
-        dict_t *xdout    = NULL;
-        char *sql        = NULL;
+	int op_errno     = 0;
+	ims_priv_t *priv = NULL;
+	ims_xdb_t *xdb   = NULL;
+	dict_t *xdout    = NULL;
+	char *sql        = NULL;
 
-        if (op != IMESS_IPC_OP) {
-                STACK_WIND (frame, ims_ipc_cbk,
-                            FIRST_CHILD (this), FIRST_CHILD (this)->fops->ipc,
-                            op, xdata);
-                return 0;
-        }
+	if (op != IMESS_IPC_OP) {
+		STACK_WIND (frame, ims_ipc_cbk,
+			    FIRST_CHILD (this), FIRST_CHILD (this)->fops->ipc,
+			    op, xdata);
+		return 0;
+	}
 
-        op_ret = dict_get_str (xdata, "sql", &sql);
+	op_ret = dict_get_str (xdata, "sql", &sql);
 
-        if (op_ret) {
-                gf_log (this->name, GF_LOG_WARNING,
-                        "ims_ipc: wrong IPC request: no sql in xdata.\n");
-                op_errno = EINVAL;
-                goto out;
-        }
+	if (op_ret) {
+		gf_log (this->name, GF_LOG_WARNING,
+			"ims_ipc: wrong IPC request: no sql in xdata.\n");
+		op_errno = EINVAL;
+		goto out;
+	}
 
-        xdout = dict_new ();
-        if (xdout == NULL) {
-                gf_log (this->name, GF_LOG_WARNING,
-                        "ims_ipc: dict_new() failed.\n");
-                op_errno = ENOMEM;
-                goto out;
-        }
+	xdout = dict_new ();
+	if (xdout == NULL) {
+		gf_log (this->name, GF_LOG_WARNING,
+			"ims_ipc: dict_new() failed.\n");
+		op_errno = ENOMEM;
+		goto out;
+	}
 
-        priv = this->private;
-        xdb = priv->xdb;
+	priv = this->private;
+	xdb = priv->xdb;
 
-        op_ret = ims_xdb_direct_query (xdb, sql, xdout);
-        if (op_ret) {
-                gf_log (this->name, GF_LOG_WARNING,
-                        "ims_ipc: direct query failed: db_ret=%d (%s).\n",
-                        xdb->db_ret, ims_xdb_errstr (xdb->db_ret));
-                op_errno = EIO;
-        }
+	op_ret = ims_xdb_direct_query (xdb, sql, xdout);
+	if (op_ret) {
+		gf_log (this->name, GF_LOG_WARNING,
+			"ims_ipc: direct query failed: db_ret=%d (%s).\n",
+			xdb->db_ret, ims_xdb_errstr (xdb->db_ret));
+		op_errno = EIO;
+	}
 
 out:
-        STACK_UNWIND_STRICT (ipc, frame, op_ret, op_errno, xdout);
+	STACK_UNWIND_STRICT (ipc, frame, op_ret, op_errno, xdout);
 
-        if (xdout)
-                dict_unref (xdout);
-        return 0;
+	if (xdout)
+		dict_unref (xdout);
+	return 0;
 }
 
 /*
@@ -760,11 +814,11 @@ init (xlator_t *this)
 
 	GF_VALIDATE_OR_GOTO ("imess-server", this, out);
 
-        if (!this->children || this->children->next) {
-                gf_log (this->name, GF_LOG_ERROR,
-                        "FATAL: imess server should have exactly one child");
-                goto out;
-        }
+	if (!this->children || this->children->next) {
+		gf_log (this->name, GF_LOG_ERROR,
+			"FATAL: imess server should have exactly one child");
+		goto out;
+	}
 
 	if (!this->parents) {
 		gf_log (this->name, GF_LOG_WARNING,
@@ -780,6 +834,8 @@ init (xlator_t *this)
 	GF_OPTION_INIT ("db-path", priv->db_path, str, out);
 	GF_OPTION_INIT ("enable-lookup-cache", priv->lookup_cache,
 			bool, out);
+	GF_OPTION_INIT ("enable-async-update", priv->async_update,
+			bool, out);
 
 	ret = ims_xdb_init (&priv->xdb, priv->db_path);
 	if (ret) {
@@ -788,9 +844,29 @@ init (xlator_t *this)
 		goto out;
 	}
 
+	if (!priv->async_update)
+		goto success;
+
+	ret = ims_async_init (&priv->async_ctx, priv->xdb);
+	if (ret) {
+		gf_log (this->name, GF_LOG_ERROR,
+			"FATAL: ims_async_init failed (ret=%d)", ret);
+		goto out;
+	}
+
+	/* we need another db connection */
+	ret = ims_xdb_init (&priv->xdb, priv->db_path);
+	if (ret) {
+		gf_log (this->name, GF_LOG_ERROR,
+			"FATAL: ims_xdb_init (2nd) failed (ret=%d)", ret);
+		goto out;
+	}
+
+success:
 	gf_log (this->name, GF_LOG_INFO,
-		"imess-server initialized: db-path=%s, lookup-cache=%d",
-		priv->db_path, priv->lookup_cache);
+		"imess-server initialized: db-path=%s, lookup-cache=%d, "
+		"async-update=%d",
+		priv->db_path, priv->lookup_cache, priv->async_update);
 	ret = 0;
 
 out:
@@ -820,19 +896,19 @@ fini (xlator_t *this)
 int32_t
 ims_release (xlator_t *this, fd_t *fd)
 {
-        return 0;
+	return 0;
 }
 
 int32_t
 ims_releasedir (xlator_t *this, fd_t *fd)
 {
-        return 0;
+	return 0;
 }
 
 int32_t
 ims_forget (xlator_t *this, inode_t *inode)
 {
-        return 0;
+	return 0;
 }
 
 struct xlator_cbks cbks = {
@@ -842,30 +918,30 @@ struct xlator_cbks cbks = {
 };
 
 struct xlator_fops fops = {
-        .mkdir        = ims_mkdir,
-        .unlink       = ims_unlink,
-        .rmdir        = ims_rmdir,
-        .symlink      = ims_symlink,
-        .rename       = ims_rename,
-        .link         = ims_link,
-        .truncate     = ims_truncate,
-        .writev       = ims_writev,
+	.mkdir        = ims_mkdir,
+	.unlink       = ims_unlink,
+	.rmdir        = ims_rmdir,
+	.symlink      = ims_symlink,
+	.rename       = ims_rename,
+	.link         = ims_link,
+	.truncate     = ims_truncate,
+	.writev       = ims_writev,
 #if 0
-        .setxattr     = ims_setxattr,
-        .getxattr     = ims_getxattr,
-        .removexattr  = ims_removexattr,
-        .fsetxattr    = ims_fsetxattr,
-        .fgetxattr    = ims_fgetxattr,
-        .fremovexattr = ims_fremovexattr,
+	.setxattr     = ims_setxattr,
+	.getxattr     = ims_getxattr,
+	.removexattr  = ims_removexattr,
+	.fsetxattr    = ims_fsetxattr,
+	.fgetxattr    = ims_fgetxattr,
+	.fremovexattr = ims_fremovexattr,
 #endif
-        .ftruncate    = ims_ftruncate,
-        .create       = ims_create,
-        .setattr      = ims_setattr,
-        .fsetattr     = ims_fsetattr,
+	.ftruncate    = ims_ftruncate,
+	.create       = ims_create,
+	.setattr      = ims_setattr,
+	.fsetattr     = ims_fsetattr,
 #if 0
 	.fallocate    = ims_fallocate,
 	.discard      = ims_discard,
-        .zerofill     = ims_zerofill,
+	.zerofill     = ims_zerofill,
 #endif
 	.ipc          = ims_ipc,
 };
@@ -873,11 +949,18 @@ struct xlator_fops fops = {
 struct volume_options options [] = {
 	{ .key = { "db-path" },
 	  .type = GF_OPTION_TYPE_PATH,
+	  .description = "Index database file path."
 	},
 	{ .key = { "enable-lookup-cache" },
 	  .type = GF_OPTION_TYPE_BOOL,
 	  .default_value = "off",
 	  .description = "Turn on the lookup cache to speed up.",
+	},
+	{ .key = { "enable-async-update" },
+	  .type = GF_OPTION_TYPE_BOOL,
+	  .default_value = "off",
+	  .description = "Turn on the asynchronous database update "
+			 "to speed up.",
 	},
 	{ .key = { NULL } },
 };

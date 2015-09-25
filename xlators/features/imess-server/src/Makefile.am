@@ -2,7 +2,8 @@ xlator_LTLIBRARIES = imess-server.la
 xlatordir = $(libdir)/glusterfs/$(PACKAGE_VERSION)/xlator/features
 
 imess_server_la_LDFLAGS = -module -avoid-version
-imess_server_la_SOURCES = imess-server.c imess-server-xdb.c
+imess_server_la_SOURCES = imess-server.c imess-server-xdb.c \
+			  imess-server-async.c
 nodist_imess_server_la_SOURCES = imess-server-xdb-schema.c
 BUILT_SOURCES = imess-server-xdb-schema.c
 imess_server_la_LIBADD = $(top_builddir)/libglusterfs/src/libglusterfs.la \
