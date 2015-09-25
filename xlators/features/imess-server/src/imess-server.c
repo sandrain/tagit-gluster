@@ -430,6 +430,9 @@ ims_setattr_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	if (op_ret == -1)
 		goto out;
 
+	if (gf_uuid_is_null (postop->ia_gfid))
+		goto out;
+
 	priv = this->private;
 
 	if (priv->async_update) {
