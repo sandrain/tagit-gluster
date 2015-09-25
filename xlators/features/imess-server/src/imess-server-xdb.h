@@ -163,6 +163,10 @@ int ims_xdb_insert_new_file (ims_xdb_t *xdb, ims_xdb_file_t *file,
 
 	ims_xdb_tx_begin (xdb);
 
+	ret = ims_xdb_insert_gfid (xdb, file);
+	if (ret)
+		goto out;
+
 	ret = ims_xdb_insert_file (xdb, file);
 	if (ret)
 		goto out;

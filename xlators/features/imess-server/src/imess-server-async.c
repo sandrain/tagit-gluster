@@ -19,6 +19,49 @@
 
 #include "imess-server.h"
 
+/*
+ * helpers
+ */
+
+static inline ims_task_t *task_dup (ims_task_t *task)
+{
+	ims_task_t *cp_task  = NULL;
+	ims_xdb_file_t *file = NULL;
+
+	cp_task = GF_CALLOC (1, sizeof(*cp_task), gf_ims_mt_ims_task_t);
+	if (cp_task) {
+		*cp_task = *task;
+
+		/* the path is lost after fs calls are finished. so, allocate a
+		 * new one for each.
+		 */
+		file = &cp_task->file;
+
+		if (task->file.path)
+			file->path = gf_strdup (task->file.path);
+		if (task->file.extra)
+			file->extra = gf_strdup ((char *) task->file.extra);
+	}
+
+	return cp_task;
+}
+
+static inline void task_destroy (ims_task_t *task)
+{
+	if (task) {
+		if (task->file.extra)
+			GF_FREE (task->file.extra);
+		if (task->file.path)
+			GF_FREE ((char *) task->file.path);
+
+		GF_FREE (task);
+	}
+}
+
+/*
+ * task queue management
+ */
+
 static inline int lock_task_queue (ims_async_t *self)
 {
 	return pthread_spin_lock (&self->lock);
@@ -138,11 +181,20 @@ static void *ims_async_work (void *arg)
 			ret = worker_remove_xattr (self, task);
 			break;
 		default:
-			/* how to report this? */
+			gf_log ("ims_async", GF_LOG_WARNING,
+				"ims_async_work: unknown task opcode: %d",
+				task->op);
 			break;
 		}
 
-		GF_FREE (task);
+		if (ret)
+			gf_log ("ims_async", GF_LOG_WARNING,
+				"ims_async_work: xdb operation failed "
+				"(ret=%d, db_ret=%d, op=%d, file=%s, gfid=%s)",
+				ret, xdb->db_ret,
+				task->op, task->file.path, task->file.gfid);
+
+		task_destroy (task);
 	}
 
 	return (void *) 0;
@@ -196,14 +248,13 @@ void ims_async_exit (ims_async_t *self)
 
 int ims_async_put_task (ims_async_t *self, ims_task_t *task)
 {
-	int ret = -1;
-	ims_task_t *cp_task = NULL;
+	int ret 	     = -1;
+	ims_task_t *cp_task  = NULL;
 
-	cp_task = GF_CALLOC (1, sizeof(*cp_task), gf_ims_mt_ims_task_t);
+	cp_task = task_dup (task);
 	if (!cp_task)
 		goto out;
 
-	*cp_task = *task;
 	task_queue_append (self, cp_task);
 
 	ret = 0;

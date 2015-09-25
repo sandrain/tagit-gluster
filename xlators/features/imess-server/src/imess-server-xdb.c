@@ -616,8 +616,10 @@ int ims_xdb_update_stat (ims_xdb_t *self, ims_xdb_file_t *file,
 
 	db_ret = sqlite3_prepare_v2 (self->conn, xdb_sqls[UPDATE_STAT],
 			-1, &stmt, 0);
-	if (db_ret != SQLITE_OK)
+	if (db_ret != SQLITE_OK) {
+		ret = -1;
 		goto out;
+	}
 
 	ims_xdb_tx_begin (self);
 
@@ -650,6 +652,7 @@ int ims_xdb_update_stat (ims_xdb_t *self, ims_xdb_file_t *file,
 	}
 
 	ims_xdb_tx_commit (self);
+	ret = 0;
 out:
 	self->db_ret = db_ret;
 	if (stmt)
