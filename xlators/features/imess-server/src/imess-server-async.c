@@ -37,6 +37,8 @@ static inline ims_task_t *task_dup (ims_task_t *task)
 		 */
 		file = &cp_task->file;
 
+		if (task->file.gfid)
+			file->gfid = gf_strdup (task->file.gfid);
 		if (task->file.path)
 			file->path = gf_strdup (task->file.path);
 		if (task->file.extra)
@@ -49,6 +51,8 @@ static inline ims_task_t *task_dup (ims_task_t *task)
 static inline void task_destroy (ims_task_t *task)
 {
 	if (task) {
+		if (task->file.gfid)
+			GF_FREE ((char *) task->file.gfid);
 		if (task->file.extra)
 			GF_FREE (task->file.extra);
 		if (task->file.path)

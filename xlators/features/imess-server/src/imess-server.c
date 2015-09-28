@@ -32,6 +32,7 @@ insert_new_xdb_entry (ims_priv_t *priv, struct iatt *buf, const char *path)
 
 		task.op = IMS_TASK_INSERT_NEW_FILE;
 
+		/* this should be GF_FREE-ed by the async worker function */
 		task.file.gfid = uuid_utoa (buf->ia_gfid);
 		task.file.path = path;
 
