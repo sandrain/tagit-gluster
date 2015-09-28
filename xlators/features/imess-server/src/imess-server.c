@@ -812,6 +812,7 @@ int32_t
 init (xlator_t *this)
 {
 	int ret            = -1;
+	int mode	   = 0;
 	dict_t *options    = NULL;
 	ims_priv_t *priv   = NULL;
 
@@ -840,7 +841,10 @@ init (xlator_t *this)
 	GF_OPTION_INIT ("enable-async-update", priv->async_update,
 			bool, out);
 
-	ret = ims_xdb_init (&priv->xdb, priv->db_path);
+	if (priv->async_update)
+		mode = XDB_MODE_ASYNC;
+
+	ret = ims_xdb_init (&priv->xdb, priv->db_path, mode);
 	if (ret) {
 		gf_log (this->name, GF_LOG_ERROR,
 			"FATAL: ims_xdb_init failed (ret=%d)", ret);
@@ -858,7 +862,7 @@ init (xlator_t *this)
 	}
 
 	/* we need another db connection */
-	ret = ims_xdb_init (&priv->xdb, priv->db_path);
+	ret = ims_xdb_init (&priv->xdb, priv->db_path, mode);
 	if (ret) {
 		gf_log (this->name, GF_LOG_ERROR,
 			"FATAL: ims_xdb_init (2nd) failed (ret=%d)", ret);

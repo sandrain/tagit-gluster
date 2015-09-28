@@ -54,9 +54,16 @@ enum {
         N_IMS_XDB_ST_ATTRS      = IMS_XDB_ST_CTIME,
 };
 
+enum {
+	XDB_MODE_SYNC		= 0,
+	XDB_MODE_ASYNC,
+	XDB_MODE_READONLY,
+};
+
 struct _ims_xdb {
-        sqlite3            *conn;       /* connection to the SQLite */
-        int                 db_ret;     /* return value from SQLite */
+        sqlite3        *conn;       /* connection to the SQLite */
+        int             db_ret;     /* return value from SQLite */
+	int		mode;       /* 0: SYNC, 1: ASYNC */
 };
 
 typedef struct _ims_xdb	ims_xdb_t;
@@ -130,7 +137,7 @@ static inline int ims_xdb_tx_rollback (ims_xdb_t *xdb)
  * API: init/fini
  */
 
-int ims_xdb_init (ims_xdb_t **xdb, const char *db_path);
+int ims_xdb_init (ims_xdb_t **xdb, const char *db_path, int mode);
 
 int ims_xdb_exit (ims_xdb_t *xdb);
 
