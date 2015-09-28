@@ -143,21 +143,21 @@ int main(int argc, char **argv)
 		}
 	}
 
-	argv -= optind;
+	argc -= optind;
 	argv += optind;
 
-        if (argc != 3) {
+        if (argc != 2) {
 		print_usage ();
                 return -1;
         }
 
-        fs = glfs_new (argv[1]);
+        fs = glfs_new (argv[0]);
         if (!fs) {
                 fprintf (stderr, "glfs_new: returned NULL\n");
                 return 1;
         }
 
-        ret = glfs_set_volfile_server (fs, "tcp", argv[2], 24007);
+        ret = glfs_set_volfile_server (fs, "tcp", argv[1], 24007);
 	if (print_debug)
 		ret = glfs_set_logging (fs, "/dev/stderr", 7);
 	else
