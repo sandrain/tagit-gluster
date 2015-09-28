@@ -159,7 +159,7 @@ static void *ims_async_work (void *arg)
 	while (1) {
 		task = task_queue_fetch (self);
 		if (!task) {
-			sleep_time = 5*1000000;
+			sleep_time = 5*1000;	/* 5 msec */
 			goto sleep;
 		}
 
@@ -200,7 +200,7 @@ static void *ims_async_work (void *arg)
 				task->op, task->file.path, task->file.gfid);
 
 		task_destroy (task);
-		sleep_time = 1000000;	/* 1 sec */
+		sleep_time = 1000;	/* 1 msec */
 sleep:
 		usleep (sleep_time);
 	}
