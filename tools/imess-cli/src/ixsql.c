@@ -18,24 +18,28 @@
 #define PROMPT		"\nixsql> "
 
 static ixsql_control_t  control;
+static char qbuf[4096];
 
 static inline void welcome(void)
 {
         printf("ixsql version 0.0.x. 'CTRL-D' to quit. good luck!\n");
 }
 
-static inline int print_result (ixsql_query_t *query)
+static void print_single_row (FILE *fp, char *row)
+{
+	fprintf (fp, "%s\n", row);
+}
+
+static int64_t print_result (ixsql_query_t *query)
 {
         int ret             = 0;
         uint64_t i          = 0;
         uint64_t count      = 0;
-        char keybuf[8]      = { 0, };
+        char keybuf[12]     = { 0, };
         char *row           = NULL;
 	dict_t *xdata       = NULL;
-	struct timeval *lat = NULL;
 
 	xdata = query->result;
-	lat = &query->latency;
 
         ret = dict_get_uint64 (xdata, "count", &count);
         if (ret)
@@ -45,28 +49,77 @@ static inline int print_result (ixsql_query_t *query)
                 sprintf (keybuf, "%llu", _llu (i));
                 ret = dict_get_str (xdata, keybuf, &row);
 
-                fprintf (control.fp_output, "[%7llu] %s\n", _llu (i+1), row);
+		print_single_row (control.fp_output, row);
         }
 
-        fprintf (control.fp_output, "\n%llu records", _llu (count));
-	fprintf (control.fp_output, ", %llu.%06llu seconds\n\n",
-		     _llu (lat->tv_sec), _llu (lat->tv_usec));
+        return count;
+}
 
-        return 0;
+static int process_sql_sliced (ixsql_query_t *query)
+{
+	int ret                = 0;
+	int offset             = 0;
+	int count              = 0;
+	int64_t res_count      = 0;
+	ixsql_query_t my_query = { 0, };
+
+	count = control.slice_count;
+
+	do {
+		sprintf (qbuf, "%s limit %d,%d", query->sql, offset, count);
+
+		my_query.sql = qbuf;
+		ret = ixsql_sql_query (control.gluster, &my_query);
+		if (ret)
+			goto out;
+
+		res_count = print_result (&my_query);
+		if (res_count == -1)
+			goto out;
+
+		offset += count;
+	} while (res_count > 0);
+
+out:
+	if (my_query.result)
+		dict_destroy (my_query.result);
+
+	return ret;
 }
 
 static int process_sql (char *line)
 {
         int ret               = 0;
 	ixsql_query_t query   = { 0, };
+	struct timeval before = { 0, };
+	struct timeval after  = { 0, };
+	struct timeval lat    = { 0, };
 
 	query.sql = line;
 
-        ret = ixsql_sql_query (control.gluster, &query);
-        if (ret)
-                goto out;
+	gettimeofday (&before, NULL);
 
-        print_result (&query);
+	if (control.slice_count == 0) {
+		ret = ixsql_sql_query (control.gluster, &query);
+		if (ret)
+			goto out;
+
+		print_result (&query);
+
+	}
+	else {
+		ret = process_sql_sliced (&query);
+		if (ret)
+			goto out;
+	}
+
+	gettimeofday (&after, NULL);
+
+	if (!control.direct || control.show_latency) {
+		timeval_latency (&lat, &before, &after);
+		fprintf (control.fp_output, "## %llu.%06llu seconds\n",
+				_llu (lat.tv_sec), _llu (lat.tv_usec));
+	}
 
 out:
         if (query.result)
@@ -106,6 +159,9 @@ static void ixsql_shell(void)
 static struct option opts[] = {
 	{ .name = "debug", .has_arg = 0, .flag = NULL, .val = 'd' },
 	{ .name = "help", .has_arg = 0, .flag = NULL, .val = 'h' },
+	{ .name = "latency", .has_arg = 0, .flag = NULL, .val = 'l' },
+	{ .name = "sql", .has_arg = 1, .flag = NULL, .val = 'q' },
+	{ .name = "slice", .has_arg = 1, .flag = NULL, .val = 's' },
 	{ 0, 0, 0, 0 },
 };
 
@@ -114,8 +170,11 @@ static const char *usage_str =
 "usage: xsql [options..] <volume id> <volume server>\n"
 "\n"
 "options:\n"
-"  --debug, -d      print log messages to stderr\n"
-"  --help, -h       this help message\n"
+"  --debug, -d            print log messages to stderr\n"
+"  --help, -h             this help message\n"
+"  --sql, -q [sql query]  execute sql directly\n"
+"  --slice, -s [N]        fetch [N] result per a query (with -q option)\n"
+"  --latency, -l          show query latency (with -q option)\n"
 "\n\n";
 
 static void print_usage (void)
@@ -127,14 +186,29 @@ static int print_debug;
 
 int main(int argc, char **argv)
 {
-        int ret    = 0;
-	int op     = 0;
-	glfs_t *fs = NULL;
+        int ret              = 0;
+	int op               = 0;
+	int show_latency     = 0;
+	uint64_t slice_count = 0;
+	int direct           = 0;
+	char *sql            = NULL;
+	glfs_t *fs           = NULL;
 
-	while ((op = getopt_long (argc, argv, "dh", opts, NULL)) != -1) {
+	while ((op = getopt_long (argc, argv, "dhlq:s:", opts, NULL))
+			!= -1) {
 		switch (op) {
 		case 'd':
 			print_debug = 1;
+			break;
+		case 'l':
+			show_latency = 1;
+			break;
+		case 'q':
+			direct = 1;
+			sql = optarg;
+			break;
+		case 's':
+			slice_count = (uint64_t ) strtoul (optarg, NULL, 0);
 			break;
 		case 'h':
 		default:
@@ -166,8 +240,14 @@ int main(int argc, char **argv)
 
 	control.gluster = fs;
 	control.fp_output = stdout;
+	control.slice_count = slice_count;
+	control.show_latency = show_latency;
+	control.direct = direct;
 
-        ixsql_shell ();
+	if (direct)
+		process_sql (sql);
+	else
+		ixsql_shell ();
 
         glfs_fini (fs);
 

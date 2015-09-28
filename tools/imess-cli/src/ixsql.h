@@ -35,7 +35,9 @@ typedef struct _ixsql_clients ixsql_clients_t;
 
 struct _ixsql_control {
 	glfs_t          *gluster;
+	int              direct;
 	FILE            *fp_output;
+	int              show_latency;
 	uint64_t         slice_count;
 	uint32_t         num_clients;
 	ixsql_clients_t  clients[0];
