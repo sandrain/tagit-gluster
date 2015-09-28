@@ -83,7 +83,7 @@ static const char *xdb_sqls[XDB_N_SQLS] = {
 	"insert into xdb_xgfid (gfid) values (?)\n",
 
 	/* [4] INSERT_FILE (gfid, path, path, pos) */
-	"ins5rt into xdb_xfile (gid, path, name) values (\n"
+	"insert into xdb_xfile (gid, path, name) values (\n"
 		"(select gid from xdb_xgfid where gfid=?),\n"
 		"?,substr(?,?))\n",
 
@@ -157,8 +157,11 @@ static int db_initialize (ims_xdb_t *self)
 	sqlite3_stmt *stmt = NULL;
 	const char *psql   = NULL;
 
+#if 0
 	psql = self->mode == XDB_MODE_ASYNC
 		? xdb_sqls[PRAGMA_ASYNC] : xdb_sqls[PRAGMA_SYNC];
+#endif
+	psql = xdb_sqls[PRAGMA_SYNC];
 
 	/* do it this before 'anything else'!! */
 	db_ret = ims_xdb_exec_simple_sql (self, psql);
