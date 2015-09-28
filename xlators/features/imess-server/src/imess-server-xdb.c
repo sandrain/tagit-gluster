@@ -33,16 +33,17 @@ static const int xdb_n_tables = 4;
 
 enum {
 	TABLE_EXISTS = 0,	/* [0] */
-	PRAGMA,			/* [1] */
-	GET_GID,		/* [2] */
-	INSERT_GFID,            /* [3] */
-	INSERT_FILE,		/* [4] */
-	INSERT_STAT,		/* [5] */
-	UPDATE_STAT,		/* [6] */
-	REMOVE_FILE,		/* [7] */
-	LINK_FILE,              /* [8] */
-	UNLINK_FILE,            /* [9] */
-	RENAME,                 /* [10] */
+	PRAGMA_ASYNC,		/* [1] */
+	PRAGMA_SYNC,		/* [2] */
+	GET_GID,		/* [3] */
+	INSERT_GFID,            /* [4] */
+	INSERT_FILE,		/* [5] */
+	INSERT_STAT,		/* [6] */
+	UPDATE_STAT,		/* [7] */
+	REMOVE_FILE,		/* [8] */
+	LINK_FILE,              /* [9] */
+	UNLINK_FILE,            /* [10] */
+	RENAME,                 /* [11] */
 
 	/******************************/
 
@@ -59,28 +60,34 @@ static const char *xdb_sqls[XDB_N_SQLS] = {
 		"and (name='xdb_xgfid' or name='xdb_xfile'\n"
 		"or name='xdb_xname' or name='xdb_xdata')\n",
 
-	/* [1] PRAGMA */
+	/* [1] PRAGMA_ASYNC */
 	/*
 	 * journal_mode=wal and synchronous=0 is slower than
 	 * journal_mode=memory and synchronous=0.
 	 */
 	"pragma mmap_size=1610612736;\n"
+		"pragma journal_mode=wal;\n"
+		"pragma synchronous=0;\n"
+		"pragma temp_store=2;\n",
+
+	/* [2] PRAGMA_SYNC */
+	"pragma mmap_size=1610612736;\n"
 		"pragma journal_mode=memory;\n"
 		"pragma synchronous=0;\n"
 		"pragma temp_store=2;\n",
 
-	/* [2] GET_GID (gfid) */
+	/* [3] GET_GID (gfid) */
 	"select gid from xdb_xgfid where gfid=?",
 
-	/* [3] INSERT_GFID (gfid) */
+	/* [4] INSERT_GFID (gfid) */
 	"insert into xdb_xgfid (gfid) values (?)\n",
 
 	/* [4] INSERT_FILE (gfid, path, path, pos) */
-	"insert into xdb_xfile (gid, path, name) values (\n"
+	"ins5rt into xdb_xfile (gid, path, name) values (\n"
 		"(select gid from xdb_xgfid where gfid=?),\n"
 		"?,substr(?,?))\n",
 
-	/* [5] INSERT_STAT */
+	/* [6] INSERT_STAT */
 	"insert into xdb_xdata (gid, nid, ival, sval)\n"
 		"select ? as gid, 1 as nid, ? as ival, null as sval\n"
 		"union select ?,2,?,null\n"
@@ -96,20 +103,20 @@ static const char *xdb_sqls[XDB_N_SQLS] = {
 		"union select ?,12,?,null\n"
 		"union select ?,13,?,null\n",
 
-	/* [6] UPDATE_STAT (ival, gid, nid) */
+	/* [7] UPDATE_STAT (ival, gid, nid) */
 	"update xdb_xdata set ival=? where gid=? and nid=?",
 
-	/* [7] REMOVE_FILE (gfid) */
+	/* [8] REMOVE_FILE (gfid) */
 	"delete from xdb_xgfid where gfid=?\n",
 
-	/* [8] LINK_FILE (gfid, path, path, pos) */
+	/* [9] LINK_FILE (gfid, path, path, pos) */
 	"insert into xdb_xfile (gid, path, name) values (\n"
 		"(select gid from xdb_xgfid where gfid=?),?,substr(?,?))\n",
 
-	/* [9] UNLINK_FILE (path) */
+	/* [10] UNLINK_FILE (path) */
 	"delete from xdb_xfile where path=?\n",
 
-	/* [10] RENAME (newpath, newpath, pos, oldpath) */
+	/* [11] RENAME (newpath, newpath, pos, oldpath) */
 	"update xdb_xfile set path=?,name=substr(?,?) where path=?\n",
 
 	/******************************/
@@ -148,9 +155,13 @@ static int db_initialize (ims_xdb_t *self)
 	int db_ret         = 0;
 	int n_tables	   = 0;
 	sqlite3_stmt *stmt = NULL;
+	const char *psql   = NULL;
+
+	psql = self->mode == XDB_MODE_ASYNC
+		? xdb_sqls[PRAGMA_ASYNC] : xdb_sqls[PRAGMA_SYNC];
 
 	/* do it this before 'anything else'!! */
-	db_ret = ims_xdb_exec_simple_sql (self, xdb_sqls[PRAGMA]);
+	db_ret = ims_xdb_exec_simple_sql (self, psql);
 	if (db_ret)
 		goto out;
 
@@ -310,7 +321,7 @@ int direct_query_callback (void *cdata, int argc, char **argv, char **colname)
  * API: init/fini
  */
 
-int ims_xdb_init (ims_xdb_t **self, const char *db_path)
+int ims_xdb_init (ims_xdb_t **self, const char *db_path, int mode)
 {
 	int ret         = -1;
 	sqlite3 *conn   = NULL;
@@ -322,7 +333,14 @@ int ims_xdb_init (ims_xdb_t **self, const char *db_path)
 	if (!_self)
 		goto out;
 
+#if 0
+	if (mode == XDB_MODE_READONLY)
+		ret = sqlite3_open_v2 (db_path, &conn, SQLITE_READONLY, NULL);
+	else
+		ret = sqlite3_open (db_path, &conn);
+#endif
 	ret = sqlite3_open (db_path, &conn);
+
 	if (ret != SQLITE_OK) {
 		ret = -1;
 		errno = EIO;
@@ -330,6 +348,7 @@ int ims_xdb_init (ims_xdb_t **self, const char *db_path)
 	}
 
 	_self->conn = conn;
+	_self->mode = mode;
 
 	ret = db_initialize (_self);
 	if (ret)

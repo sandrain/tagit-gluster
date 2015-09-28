@@ -144,6 +144,7 @@ static inline int worker_remove_xattr (ims_async_t *self, ims_task_t *task)
 static void *ims_async_work (void *arg)
 {
 	int ret			= 0;
+	uint64_t sleep_time	= 0;
 	ims_async_t *self	= NULL;
 	ims_xdb_t *xdb 		= NULL;
 	ims_task_t *task	= NULL;
@@ -154,8 +155,8 @@ static void *ims_async_work (void *arg)
 	while (1) {
 		task = task_queue_fetch (self);
 		if (!task) {
-			usleep (5000);
-			continue;
+			sleep_time = 5*1000000;
+			goto sleep;
 		}
 
 		switch (task->op) {
@@ -195,6 +196,9 @@ static void *ims_async_work (void *arg)
 				task->op, task->file.path, task->file.gfid);
 
 		task_destroy (task);
+		sleep_time = 1000000;	/* 1 sec */
+sleep:
+		usleep (sleep_time);
 	}
 
 	return (void *) 0;
