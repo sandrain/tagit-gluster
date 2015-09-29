@@ -93,7 +93,82 @@ void ims_async_exit (ims_async_t *ctx);
 int ims_async_put_task (ims_async_t *ctx, ims_task_t *task);
 
 /*
- * operation code for ipc. the actual command comes as string in xdata
+ * imess ipc operations (imess-server-active.c)
  */
+
+/*
+ * we support two ipc requests:
+ *
+ * 1. sql query to fetch entries from xdb
+ * 2. active execution request (filter, extractor)
+ *
+ * ## 1. sql queries
+ * - request format:
+ *   @op: IMESS_IPC_OP
+ *   @xdata: [ 'type': 'query', 'sql': '<any sql queries>' ]
+ *
+ * - the query result data is encoded into a new dict (xdata) as follows:
+ *   @xdata(out): [ 'count': <number of records>,
+ *                  0: <first row>, 1: <second row>, ... ]
+ *
+ * - all concerns about the query (e.g. distructive sqls) should be taken care
+ *   of in the client application. here, we do nothing but executing whatever
+ *   queries received.
+ *
+ * ## 2. active requests
+ * - currently two types of active operations are supported, a filter and an
+ *   extractor.
+ *
+ * - request format:
+ *   @op: IMESS_IPC_OP
+ *   @xdata: [ 'type': 'filter' or 'extractor',
+ *             'sql': '<sql for files to be affected>',
+ *             'operator': '<program pathname for filter or extractor>' ]
+ *
+ * - the filter is more a transformer, which allows applications to read
+ *   processed file data, instead of the raw data. this aims for reducing
+ *   unnecessary file system traffic only to do minor tasks, such as image
+ *   conversion, and data extraction (nc files). the filter program should
+ *   take two arguments, one for input data file and the other for the output
+ *   data file. the program should work like:
+ *
+ *   (shell) $ filter input.txt input.txt-filtered-@34
+ *   (shell) $ echo $?
+ *   0
+ *   (shell) $
+ *
+ *   the output file is not included in the file system, but can be only read
+ *   through the .meta entry. your filter is run on-the-fly upon an application
+ *   is reading it via .meta interface.
+ *
+ * - the extractor allows applications to extract any attributes from a file,
+ *   to be index by our xdb. the extractor should take an argument as a
+ *   filename and emit output lines, each of which strictly formatted as
+ *
+ *   '<key>'='<type prefix>''<value>'
+ *
+ *   . two type prefixes are recognized: 'i' for numeric values, and 's' for
+ *   string values. floating point is not supported, yet. for example, if the
+ *   extractor, setavg reads a file, 'result.txt' and wants to set 'average'=30
+ *   and 'title'='job31', the program should work as:
+ *
+ *   (shell) $ setavg /any/where/result.txt
+ *   average=i30
+ *   title=sjob31
+ *   (shell) $ 
+ *
+ *   the result.txt will be set with additional extended attributes: average=30
+ *   and title=job31. if the file is already set with an attribute name, the
+ *   corresponding value will be overwritten.
+ */
+
+int32_t ims_ipc_query (xlator_t *this,
+		       dict_t *xdata_in, dict_t *xdata_out, int *err);
+
+int32_t ims_ipc_filter (xlator_t *this,
+		        dict_t *xdata_in, dict_t *xdata_out, int *err);
+
+int32_t ims_ipc_extractor (xlator_t *this,
+		           dict_t *xdata_in, dict_t *xdata_out, int *err);
 
 #endif	/* _IMESS_SERVER_H_ */

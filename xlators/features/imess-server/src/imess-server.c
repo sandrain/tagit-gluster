@@ -744,10 +744,8 @@ ims_ipc (call_frame_t *frame, xlator_t *this, int op, dict_t *xdata)
 {
 	int op_ret       = -1;
 	int op_errno     = 0;
-	ims_priv_t *priv = NULL;
-	ims_xdb_t *xdb   = NULL;
 	dict_t *xdout    = NULL;
-	char *sql        = NULL;
+	char *type       = NULL;
 
 	if (op != IMESS_IPC_OP) {
 		STACK_WIND (frame, ims_ipc_cbk,
@@ -756,11 +754,11 @@ ims_ipc (call_frame_t *frame, xlator_t *this, int op, dict_t *xdata)
 		return 0;
 	}
 
-	op_ret = dict_get_str (xdata, "sql", &sql);
-
+	/* read the request type */
+	op_ret = dict_get_str (xdata, "type", &type);
 	if (op_ret) {
 		gf_log (this->name, GF_LOG_WARNING,
-			"ims_ipc: wrong IPC request: no sql in xdata.\n");
+			"ims_ipc: IPC request without a type specified.");
 		op_errno = EINVAL;
 		goto out;
 	}
@@ -773,22 +771,36 @@ ims_ipc (call_frame_t *frame, xlator_t *this, int op, dict_t *xdata)
 		goto out;
 	}
 
-	priv = this->private;
-	xdb = priv->xdb;
-
-	op_ret = ims_xdb_direct_query (xdb, sql, xdout);
-	if (op_ret) {
+	if (strncmp (type, "query", strlen("query")) == 0) {
+		op_ret = ims_ipc_query (this, xdata, xdout, &op_errno);
+		if (op_ret)
+			goto out;
+	}
+	else if (strncmp (type, "filter", strlen("filter")) == 0) {
+		op_ret = ims_ipc_filter (this, xdata, xdout, &op_errno);
+		if (op_ret)
+			goto out;
+	}
+	else if (strncmp (type, "extractor", strlen("extractor")) == 0) {
+		op_ret = ims_ipc_extractor (this, xdata, xdout, &op_errno);
+		if (op_ret)
+			goto out;
+	}
+	else {
 		gf_log (this->name, GF_LOG_WARNING,
-			"ims_ipc: direct query failed: db_ret=%d (%s).\n",
-			xdb->db_ret, ims_xdb_errstr (xdb->db_ret));
-		op_errno = EIO;
+			"ims_ipc: unknown IPC type %s.", type);
+		op_errno = EINVAL;
 	}
 
 out:
+	if (type)
+		GF_FREE (type);
+
 	STACK_UNWIND_STRICT (ipc, frame, op_ret, op_errno, xdout);
 
 	if (xdout)
 		dict_unref (xdout);
+
 	return 0;
 }
 
