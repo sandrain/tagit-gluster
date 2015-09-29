@@ -26,13 +26,6 @@ struct _ixsql_query {
 
 typedef struct _ixsql_query ixsql_query_t;
 
-struct _ixsql_clients {
-	const char *name;
-	int         active;
-};
-
-typedef struct _ixsql_clients ixsql_clients_t;
-
 struct _ixsql_control {
 	glfs_t          *gluster;
 	int              direct;
@@ -40,12 +33,14 @@ struct _ixsql_control {
 	int              show_latency;
 	uint64_t         slice_count;
 	uint32_t         num_clients;
-	ixsql_clients_t  clients[0];
+	int              active_client;		/* -1 for all */
+	char            *volname;
+	char            *volserver;
 };
 
 typedef struct _ixsql_control ixsql_control_t;
 
-int ixsql_sql_query (glfs_t *fs, ixsql_query_t *query);
+int ixsql_sql_query (ixsql_control_t *ctl, ixsql_query_t *query);
 
 int ixsql_control_cmd (ixsql_control_t *control, const char *line);
 
