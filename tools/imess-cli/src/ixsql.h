@@ -43,7 +43,8 @@ timeval_latency (struct timeval *out,
 	out->tv_usec = usec;
 }
 
-#define IXSQL_QUIT	0x12345
+#define IXSQL_QUIT		0x12345
+#define IXSQL_DEFAULT_SLICE	200
 
 #ifndef _llu
 #define _llu(x)	((unsigned long long) (x))
