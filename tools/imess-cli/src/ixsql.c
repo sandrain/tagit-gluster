@@ -219,9 +219,9 @@ int main(int argc, char **argv)
 	int op               = 0;
 	int mute             = 0;
 	int show_latency     = 0;
-	uint64_t slice_count = 0;
 	int direct           = 0;
 	int n_clients        = 0;
+	uint64_t slice_count = IXSQL_DEFAULT_SLICE;
 	int active_client    = -1;
 	char *sql            = NULL;
 	glfs_t *fs           = NULL;
