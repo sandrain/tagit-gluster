@@ -69,7 +69,40 @@ static int ixsql_cmd_slice (ixsql_control_t *ctl, int argc, char **argv)
 
 static int ixsql_cmd_client (ixsql_control_t *ctl, int argc, char **argv)
 {
-	fprintf (ctl->fp_output, "not implemented, yet\n");
+	int i         = 0;
+	char star     = 0;
+
+	switch (argc)  {
+	case 1:
+		fprintf (ctl->fp_output, "total %d clients, sending query to ",
+				ctl->num_clients);
+		if (ctl->active_client < 0)
+			fprintf (ctl->fp_output, "all clients:\n");
+		else
+			fprintf (ctl->fp_output, "client %d:\n",
+					ctl->active_client);
+
+		for (i = 0; i < ctl->num_clients; i++) {
+			star = 1;
+			if (ctl->active_client >= 0 && ctl->active_client != i)
+				star = 0;
+
+			fprintf (ctl->fp_output, "[%3d] %s-client-%d%s\n",
+					i, ctl->volname, i,
+					star ? " [*]" : "");
+		}
+		break;
+	case 2:
+		ctl->active_client = atoi (argv[1]);
+		fprintf (ctl->fp_output,
+			 "active client is set to %d\n", ctl->active_client);
+		break;
+	default:
+		fprintf (ctl->fp_output,
+			 "%s expects none or a single argument.\n",
+			 argv[0]);
+		return -1;
+	}
 
 	return 0;
 }
@@ -163,13 +196,17 @@ process_control_cmd (ixsql_control_t *ctl, int argc, char **argv)
  * API
  */
 
-int ixsql_sql_query (glfs_t *fs, ixsql_query_t *query)
+int ixsql_sql_query (ixsql_control_t *ctl, ixsql_query_t *query)
 {
         int ret               = 0;
+	glfs_t *fs            = NULL;
         dict_t *cmd           = NULL;
         dict_t *result        = NULL;
         struct timeval before = { 0, };
         struct timeval after  = { 0, };
+	char buf[128]         = { 0, };
+
+	fs = ctl->gluster;
 
         if (!cmd) {
                 cmd = dict_new ();
@@ -178,9 +215,15 @@ int ixsql_sql_query (glfs_t *fs, ixsql_query_t *query)
                         goto out;
                 }
 
-                ret = dict_set_str (cmd, "clients", "all");
                 ret = dict_set_str (cmd, "sql", query->sql);
         }
+
+	if (ctl->active_client == -1)
+                ret = dict_set_str (cmd, "clients", "all");
+	else {
+		sprintf(buf, "%s-client-%d", ctl->volname, ctl->active_client);
+                ret = dict_set_str (cmd, "clients", buf);
+	}
 
         gettimeofday (&before, NULL);
 

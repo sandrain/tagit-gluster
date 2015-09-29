@@ -10,6 +10,7 @@
 #include <string.h>
 #include <getopt.h>
 #include <time.h>
+#include <assert.h>
 #include <readline/readline.h>
 #include <readline/history.h>
 
@@ -28,6 +29,30 @@ static inline void welcome(void)
 static void print_single_row (FILE *fp, char *row)
 {
 	fprintf (fp, "%s\n", row);
+}
+
+static int read_client_number (glfs_t *fs, ixsql_control_t *ctl)
+{
+	int count = 0;
+	char *path = NULL;
+	glfs_fd_t *fd = NULL;
+        char buf[512] = { 0, };
+        struct dirent *entry = NULL;
+
+	sprintf (qbuf, "/.meta/graphs/active/%s-dht/subvolumes", ctl->volname);
+	path = qbuf;
+
+	fd = glfs_opendir (fs, path);
+	if (!fd) {
+		fprintf (stderr, "failed to open %s: %s\n",
+				 path, strerror (errno));
+		return -1;
+	}
+
+	while (glfs_readdir_r (fd, (struct dirent *) buf, &entry), entry)
+		count++;
+
+	return count;
 }
 
 static int64_t print_result (ixsql_query_t *query)
@@ -69,7 +94,7 @@ static int process_sql_sliced (ixsql_query_t *query)
 		sprintf (qbuf, "%s limit %d,%d", query->sql, offset, count);
 
 		my_query.sql = qbuf;
-		ret = ixsql_sql_query (control.gluster, &my_query);
+		ret = ixsql_sql_query (&control, &my_query);
 		if (ret)
 			goto out;
 
@@ -100,7 +125,7 @@ static int process_sql (char *line)
 	gettimeofday (&before, NULL);
 
 	if (control.slice_count == 0) {
-		ret = ixsql_sql_query (control.gluster, &query);
+		ret = ixsql_sql_query (&control, &query);
 		if (ret)
 			goto out;
 
@@ -117,7 +142,7 @@ static int process_sql (char *line)
 
 	if (!control.direct || control.show_latency) {
 		timeval_latency (&lat, &before, &after);
-		fprintf (control.fp_output, "## %llu.%06llu seconds\n",
+		fprintf (stdout, "## %llu.%06llu seconds\n",
 				_llu (lat.tv_sec), _llu (lat.tv_usec));
 	}
 
@@ -159,7 +184,9 @@ static void ixsql_shell(void)
 static struct option opts[] = {
 	{ .name = "debug", .has_arg = 0, .flag = NULL, .val = 'd' },
 	{ .name = "help", .has_arg = 0, .flag = NULL, .val = 'h' },
+	{ .name = "client", .has_arg = 1, .flag = NULL, .val = 'c' },
 	{ .name = "latency", .has_arg = 0, .flag = NULL, .val = 'l' },
+	{ .name = "mute", .has_arg = 0, .flag = NULL, .val = 'm' },
 	{ .name = "sql", .has_arg = 1, .flag = NULL, .val = 'q' },
 	{ .name = "slice", .has_arg = 1, .flag = NULL, .val = 's' },
 	{ 0, 0, 0, 0 },
@@ -175,6 +202,8 @@ static const char *usage_str =
 "  --sql, -q [sql query]  execute sql directly\n"
 "  --slice, -s [N]        fetch [N] result per a query (with -q option)\n"
 "  --latency, -l          show query latency (with -q option)\n"
+"  --mute, -m             mute output, useful for measuring the latency\n"
+"  --client, -c [N]       send query to a specific client\n"
 "\n\n";
 
 static void print_usage (void)
@@ -188,20 +217,29 @@ int main(int argc, char **argv)
 {
         int ret              = 0;
 	int op               = 0;
+	int mute             = 0;
 	int show_latency     = 0;
 	uint64_t slice_count = 0;
 	int direct           = 0;
+	int n_clients        = 0;
+	int active_client    = -1;
 	char *sql            = NULL;
 	glfs_t *fs           = NULL;
 
-	while ((op = getopt_long (argc, argv, "dhlq:s:", opts, NULL))
+	while ((op = getopt_long (argc, argv, "c:dhlmq:s:", opts, NULL))
 			!= -1) {
 		switch (op) {
+		case 'c':
+			active_client = atoi (optarg);
+			break;
 		case 'd':
 			print_debug = 1;
 			break;
 		case 'l':
 			show_latency = 1;
+			break;
+		case 'm':
+			mute = 1;
 			break;
 		case 'q':
 			direct = 1;
@@ -239,7 +277,19 @@ int main(int argc, char **argv)
         ret = glfs_init (fs);
 
 	control.gluster = fs;
-	control.fp_output = stdout;
+	control.volname = argv[0];
+	control.volserver = argv[1];
+
+	n_clients = read_client_number (fs, &control);
+	control.num_clients = n_clients;
+	control.active_client = active_client;
+
+	if (mute) {
+		control.fp_output = fopen("/dev/null", "w");
+		assert(control.fp_output);
+	}
+	else
+		control.fp_output = stdout;
 	control.slice_count = slice_count;
 	control.show_latency = show_latency;
 	control.direct = direct;
