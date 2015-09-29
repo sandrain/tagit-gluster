@@ -8,7 +8,7 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 
-#include "ix-imess.h"
+#include "ixsql.h"
 
 static glfs_t *fs;
 

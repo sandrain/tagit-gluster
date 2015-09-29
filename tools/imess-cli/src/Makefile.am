@@ -2,7 +2,7 @@ bin_PROGRAMS = ixfind ixsql
 
 ixfind_SOURCES = ixfind.c
 
-noinst_HEADERS = ix-imess.h ixsql.h
+noinst_HEADERS = ixsql.h
 
 ixfind_LDADD = $(top_builddir)/libglusterfs/src/libglusterfs.la \
 	       $(top_builddir)/api/src/libgfapi.la \
