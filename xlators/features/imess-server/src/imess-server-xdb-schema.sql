@@ -35,7 +35,8 @@ create table xdb_xname (
 	nid	integer not null,
 	name	text not null,
 
-	primary key (nid)
+	primary key (nid),
+	unique (name)
 );
 
 -- stat(2) attributes

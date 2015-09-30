@@ -251,88 +251,44 @@ ims_rmdir (call_frame_t *frame, xlator_t *this, loc_t *loc, int flags,
  * setxattr
  */
 
-struct _ims_setxattr_handler_data {
-	ims_xdb_t      *xdb;
-	ims_xdb_file_t *file;
+struct _xattr_filler {
+	int             count;
+	ims_xdb_attr_t *xattr;
 };
 
-typedef struct _ims_xattr_handler_data ims_setxattr_handler_data_t;
-
-static inline int
-parse_value_type (data_t *v)
-{
-	int i        = 0;
-	int32_t len  = 0;
-	char *data   = NULL;
-	int type     = IMS_XDB_TYPE_NONE;
-
-	data = (char *) data_to_ptr (v);
-	len = v->len;
-
-	if (data[0] != '-' || isdigit (data[0]))
-		goto try_string;
-
-	for (i = 1; i < len; i++) {
-		if (!isdigit (data[i]))
-			goto try_string;
-	}
-
-	type = IMS_XDB_TYPE_INTEGER;
-	goto out;
-
-try_string:
-	for (i = 0; i < len; i++) {
-		if (!isprint (data[i]))
-			goto out;
-	}
-
-	type = IMS_XDB_TYPE_STRING;
-
-out:
-	return type;
-}
+typedef struct _xattr_filler xattr_filler_t;
 
 static int
-handle_setxattr_kv (dict_t *dict, char *k, data_t *v, void *tmp)
+find_setxattr_kv (dict_t *dict, char *k, data_t *v, void *tmp)
 {
-	int ret                           = 0;
-	int type                          = 0;
-	ims_xdb_t *xdb                    = NULL;
-	ims_xdb_file_t *file              = NULL;
-	ims_xdb_attr_t xattr              = { 0, };
-	ims_setxattr_handler_data_t *data = NULL;
+	int type                 = IMS_XDB_TYPE_INTEGER;
+	xattr_filler_t *filler   = NULL;
+	char data_str[PATH_MAX]  = { 0, };
+	int64_t val	         = 0;
 
-	if (XATTR_IS_PATHINFO (k))
-		goto out;
-	else if (ZR_FILE_CONTENT_REQUEST (k))
-		goto out;
-	else if (GF_POSIX_ACL_REQUEST (k))
+	filler = tmp;
+
+	if (!XATTR_IS_IMESSXDB (k))
 		goto out;
 
-	data = (ims_setxattr_handler_data_t *) tmp;
+	memset (data_str, 0, sizeof(data_str));
+	memcpy (data_str, data_to_ptr (v), v->len);
 
-	type = parse_value_type (v);
-	if (type == IMS_XDB_TYPE_NONE)
-		goto out;
+	val = strtoll (data_str, NULL, 0);
+	if (val == 0 && strcmp (data_str, "0"))
+		type = IMS_XDB_TYPE_STRING;
 
-	xdb = data->xdb;
-	file = data->file;
+	filler->xattr->name = k;
+	filler->xattr->type = type;
+	filler->count++;
 
-	xattr.name = k;
-	xattr.type = type;
+	filler->xattr->ival = 0;
+	filler->xattr->sval = NULL;
 
 	if (type == IMS_XDB_TYPE_INTEGER)
-		xattr.ival = data_to_int64 (v);
+		filler->xattr->ival = val;
 	else
-		xattr.sval = data_to_str (v);
-
-	ret = ims_xdb_insert_xattr (xdb, file, &xattr, 1);
-	if (ret)
-		gf_log (this->name, GF_LOG_WARNING,
-			"ims_setxattr_cbk: ims_xdb_insert_xattr failed "
-			"(ret=%d, db_ret=%d)",
-			ret, priv->xdb->db_ret);
-
+		filler->xattr->sval = gf_strdup (data_str);
 out:
 	return 0;
 }
@@ -341,40 +297,66 @@ int32_t
 ims_setxattr_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 		  int32_t op_ret, int32_t op_errno, dict_t *xdata)
 {
-	int ret                                 = 0;
-	ims_priv_t *priv                        = NULL;
-	ims_xdb_file_t file                     = { 0, };
-	ims_setxattr_handler_data_t filler_data = { 0, };
+	int ret               = 0;
+	ims_priv_t *priv      = NULL;
+	ims_xdb_t *xdb        = NULL;
+	ims_xdb_attr_t *xattr = NULL;
 
 	if (op_ret == -1 || cookie == NULL)
 		goto out;
 
 	priv = this->private;
-	file.gfid = cookie;
+	xdb = priv->xdb;
+	xattr = cookie;
 
-	filler_data->xdb  = priv->xdb;
-	filler_data->file = &file;
-
-	ret = dict_foreach (xdata, handle_setxattr_kv, &filler_data);
+	ret = ims_xdb_setxattr (xdb, xattr);
 	if (ret)
 		gf_log (this->name, GF_LOG_WARNING,
-				"ims_setxattr_cbk: handle_setxattr_kv failed "
-				"(ret=%d, db_ret=%d)",
-				ret, priv->xdb->db_ret);
+			"ims_setxattr_cbk: ims_xdb_setxattr failed "
+			"(db_ret=%d, %s)",
+			xdb->db_ret, ims_xdb_errstr (xdb->db_ret));
+
+	if (xattr->sval)
+		GF_FREE ((void *) xattr->sval);
 
 out:
 	STACK_UNWIND_STRICT (setxattr, frame, op_ret, op_errno, xdata);
 	return 0;
 }
 
+/*
+ * we only index if a key contains GF_IMESSXDB_KEY_PREFIX prefix.
+ */
 int32_t
 ims_setxattr (call_frame_t *frame, xlator_t *this,
 	      loc_t *loc, dict_t *dict, int flags, dict_t *xdata)
 {
-	void *cookie    = NULL;
+	int ret               = -1;
+	void *cookie          = NULL;
+	ims_xdb_attr_t xattr  = { 0, };
+	xattr_filler_t filler = { 0, };
 
-	cookie = uuid_utoa (loc->inode->gfid);
+	filler.xattr = &xattr;
+	ret = dict_foreach (dict, find_setxattr_kv, &filler);
+	if (ret) {
+		gf_log (this->name, GF_LOG_WARNING,
+			"ims_setxattr: find_xattr_kv failed (ret=%d)", ret);
+		goto wind;
+	}
 
+	if (filler.count == 0)
+		goto wind;
+
+	if (filler.count != 1) {
+		gf_log (this->name, GF_LOG_WARNING,
+			"ims_setxattr: find_setxattr_kv counts %d xattrs",
+			filler.count);
+	}
+
+	xattr.gfid = uuid_utoa (loc->inode->gfid);
+	cookie = (void *) &xattr;
+
+wind:
 	STACK_WIND_COOKIE (frame, ims_setxattr_cbk, cookie,
 			FIRST_CHILD (this),
 			FIRST_CHILD (this)->fops->setxattr,

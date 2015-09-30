@@ -77,6 +77,8 @@ struct _ims_xdb_file {
 typedef struct _ims_xdb_file ims_xdb_file_t;
 
 struct _ims_xdb_attr {
+	const char *gfid;       /* associated gfid */
+
         int         type;	/* attribute type, IMS_XDB_TYPE_xx */
         const char *name;	/* attribute name, for stat(2) use
                                    IMS_XDB_ST_xxx */
@@ -198,6 +200,8 @@ int ims_xdb_insert_xattr (ims_xdb_t *xdb, ims_xdb_file_t *file,
 
 int ims_xdb_remove_xattr (ims_xdb_t *xdb, ims_xdb_file_t *file,
                           const char *name);
+
+int ims_xdb_setxattr (ims_xdb_t *xdb, ims_xdb_attr_t *attr);
 
 /* for now, this cannot be done asynchronously */
 int ims_xdb_direct_query (ims_xdb_t *xdb, const char *sql, dict_t *xdata);
