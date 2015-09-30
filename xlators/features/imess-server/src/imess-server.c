@@ -246,11 +246,11 @@ ims_rmdir (call_frame_t *frame, xlator_t *this, loc_t *loc, int flags,
 	return 0;
 }
 
+
 /*
  * setxattr
  */
 
-#if 0
 struct _ims_setxattr_handler_data {
 	ims_xdb_t      *xdb;
 	ims_xdb_file_t *file;
@@ -329,9 +329,9 @@ handle_setxattr_kv (dict_t *dict, char *k, data_t *v, void *tmp)
 	ret = ims_xdb_insert_xattr (xdb, file, &xattr, 1);
 	if (ret)
 		gf_log (this->name, GF_LOG_WARNING,
-				"ims_setxattr_cbk: ims_xdb_insert_xattr failed "
-				"(ret=%d, db_ret=%d)",
-				ret, priv->xdb->db_ret);
+			"ims_setxattr_cbk: ims_xdb_insert_xattr failed "
+			"(ret=%d, db_ret=%d)",
+			ret, priv->xdb->db_ret);
 
 out:
 	return 0;
@@ -346,7 +346,7 @@ ims_setxattr_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	ims_xdb_file_t file                     = { 0, };
 	ims_setxattr_handler_data_t filler_data = { 0, };
 
-	if (op_ret == -1)
+	if (op_ret == -1 || cookie == NULL)
 		goto out;
 
 	priv = this->private;
@@ -367,12 +367,11 @@ out:
 	return 0;
 }
 
-
 int32_t
 ims_setxattr (call_frame_t *frame, xlator_t *this,
 	      loc_t *loc, dict_t *dict, int flags, dict_t *xdata)
 {
-	void *cookie = NULL;
+	void *cookie    = NULL;
 
 	cookie = uuid_utoa (loc->inode->gfid);
 
@@ -382,7 +381,6 @@ ims_setxattr (call_frame_t *frame, xlator_t *this,
 			loc, dict, flags, xdata);
 	return 0;
 }
-#endif
 
 /*
  * ftruncate
@@ -974,8 +972,8 @@ struct xlator_fops fops = {
 	.link         = ims_link,
 	.truncate     = ims_truncate,
 	.writev       = ims_writev,
-#if 0
 	.setxattr     = ims_setxattr,
+#if 0
 	.getxattr     = ims_getxattr,
 	.removexattr  = ims_removexattr,
 	.fsetxattr    = ims_fsetxattr,
