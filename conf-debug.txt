@@ -1,0 +1,1 @@
+./configure --prefix=/ccs/techint/home/hs2/debug/imess/prefix --exec-prefix=/ccs/techint/home/hs2/debug/imess/prefix --with-mountutildir=/ccs/techint/home/hs2/debug/imess/prefix/sbin --with-initdir=/ccs/techint/home/hs2/debug/imess/prefix/etc/init.d --sysconfdir=/ccs/techint/home/hs2/debug/imess/prefix/etc --localstatedir=/var --enable-debug --disable-glupy --enable-imess

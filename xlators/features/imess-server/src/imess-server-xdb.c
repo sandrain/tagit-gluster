@@ -44,11 +44,11 @@ enum {
 	LINK_FILE,              /* [9] */
 	UNLINK_FILE,            /* [10] */
 	RENAME,                 /* [11] */
+	INSERT_XNAME,		/* [12] */
+	INSERT_XDATA,		/* [13] */
 
 	/******************************/
 
-	INSERT_XNAME,		/* [3] */
-	INSERT_XDATA,		/* [4] */
 	REMOVE_XDATA,		/* [5] */
 
 	XDB_N_SQLS,
@@ -119,15 +119,15 @@ static const char *xdb_sqls[XDB_N_SQLS] = {
 	/* [11] RENAME (newpath, newpath, pos, oldpath) */
 	"update xdb_xfile set path=?,name=substr(?,?) where path=?\n",
 
-	/******************************/
-
-	/* [2] INSERT_XNAME (name) */
+	/* [12] INSERT_XNAME (name) */
 	"insert or ignore into xdb_xname (name) values (?)\n",
 
-	/* [3] INSERT_XDATA (gfid, name, ival, sval) */
-	"insert or replace into xdb_xdata (fid, nid, ival, sval) values\n"
-		"((select fid from xdb_xfile where gfid=?),\n"
+	/* [13] INSERT_XDATA (gfid, name, ival, sval) */
+	"insert or replace into xdb_xdata (gid, nid, ival, sval) values\n"
+		"((select gid from xdb_xgfid where gfid=?),\n"
 		"(select nid from xdb_xname where name=?),?,?)\n",
+
+	/******************************/
 
 	/* [4] REMOVE_XDATA (gfid, name) */
 	"delete from xdb_xdata where\n"
@@ -739,6 +739,88 @@ int ims_xdb_remove_xattr (ims_xdb_t *self, ims_xdb_file_t *file,
 	return 0;
 }
 
+int ims_xdb_setxattr (ims_xdb_t *self, ims_xdb_attr_t *xattr)
+{
+	int ret  = -1;
+	int db_ret = 0;
+	sqlite3_stmt *stmt = NULL;
+
+	__valptr (self, out);
+	__valptr (xattr, out);
+	__valptr (xattr->gfid, out);
+	__valptr (xattr->name, out);
+
+	if (xattr->type != IMS_XDB_TYPE_INTEGER &&
+	    xattr->type != IMS_XDB_TYPE_STRING)
+		return -1;
+
+	ims_xdb_tx_begin (self);
+
+	/*
+	 * insert xname
+	 */
+	db_ret = sqlite3_prepare_v2 (self->conn, xdb_sqls[INSERT_XNAME],
+				     -1, &stmt, 0);
+	if (db_ret != SQLITE_OK)
+		goto out;
+	db_ret = sqlite3_bind_text (stmt, 1, xattr->name, -1, SQLITE_STATIC);
+
+	if (db_ret)
+		goto out;
+
+	do {
+		db_ret = sqlite3_step (stmt);
+	} while (db_ret == SQLITE_BUSY);
+
+	if (db_ret != SQLITE_DONE)
+		goto out;
+
+	/*
+	 * insert xdata
+	 */
+	sqlite3_finalize (stmt);
+	db_ret = sqlite3_prepare_v2 (self->conn, xdb_sqls[INSERT_XDATA],
+				     -1, &stmt, 0);
+	if (db_ret != SQLITE_OK)
+		goto out;
+
+	db_ret = sqlite3_bind_text (stmt, 1, xattr->gfid, -1, SQLITE_STATIC);
+	db_ret |= sqlite3_bind_text (stmt, 2, xattr->name, -1, SQLITE_STATIC);
+
+	if (xattr->type == IMS_XDB_TYPE_INTEGER) {
+		db_ret |= sqlite3_bind_int64 (stmt, 3, xattr->ival);
+		db_ret |= sqlite3_bind_null (stmt, 4);
+	}
+	else if (xattr->type == IMS_XDB_TYPE_STRING) {
+		db_ret |= sqlite3_bind_null (stmt, 3);
+		db_ret |= sqlite3_bind_text (stmt, 4, xattr->sval,
+					     -1, SQLITE_STATIC);
+	}
+	else {
+		/* this should not happen */
+	}
+
+	if (db_ret)
+		goto out;
+
+	do {
+		db_ret = sqlite3_step (stmt);
+	} while (db_ret == SQLITE_BUSY);
+
+	ret = db_ret == SQLITE_DONE ? 0 : -1;
+out:
+	if (ret)
+		ims_xdb_tx_rollback (self);
+	else
+		ims_xdb_tx_commit (self);
+
+	self->db_ret = db_ret;
+	if (stmt)
+		sqlite3_finalize (stmt);
+
+	return ret;
+}
+
 int ims_xdb_direct_query (ims_xdb_t *self, const char *sql, dict_t *xdata)
 {
 	int ret                       = -1;
@@ -758,7 +840,6 @@ int ims_xdb_direct_query (ims_xdb_t *self, const char *sql, dict_t *xdata)
 		goto out;
 
 	ret = dict_set_uint64 (xdata, "count", cdata.rows);
-
 out:
 	self->db_ret = db_ret;
 	return ret;

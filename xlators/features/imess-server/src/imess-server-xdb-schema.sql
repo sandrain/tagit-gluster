@@ -23,10 +23,11 @@ create table xdb_xfile (
 	path	text not null,
 	name	text not null,
 
-	primary key (fid)
+	primary key (fid),
+	unique (path)
 );
 
-create index ix_xdb_xfile_path on xdb_xfile (path);
+-- create index ix_xdb_xfile_path on xdb_xfile (path);
 create index ix_xdb_xfile_name on xdb_xfile (name);
 
 -- file attributes (only names), including stat(2) and xattrs
@@ -34,7 +35,8 @@ create table xdb_xname (
 	nid	integer not null,
 	name	text not null,
 
-	primary key (nid)
+	primary key (nid),
+	unique (name)
 );
 
 -- stat(2) attributes

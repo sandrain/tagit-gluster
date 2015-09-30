@@ -244,6 +244,11 @@
 #define CTR_RESPONSE_LINK_COUNT_XDATA "ctr_response_link_count"
 #define CTR_REQUEST_LINK_COUNT_XDATA  "ctr_request_link_count"
 
+/* imess ixdb xattr prefix */
+#define	GF_XATTR_IMESS_KEY	"user.imessxdb"
+#define XATTR_IS_IMESSXDB(x) (strncmp (x, GF_XATTR_IMESS_KEY,           \
+                                       strlen (GF_XATTR_IMESS_KEY)) == 0)
+
 #define GF_LOG_LRU_BUFSIZE_DEFAULT 5
 #define GF_LOG_LRU_BUFSIZE_MIN 0
 #define GF_LOG_LRU_BUFSIZE_MAX 20
