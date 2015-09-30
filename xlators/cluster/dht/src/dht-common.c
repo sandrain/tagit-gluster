@@ -5730,6 +5730,13 @@ dht_mkdir_hashed_cbk (call_frame_t *frame, void *cookie,
                 dht_selfheal_directory (frame, dht_mkdir_selfheal_cbk,
                                         &local->loc, layout);
         }
+
+	/* imess: inform this is not a hashed location */
+	ret = dict_set_int8 (local->params, "imess-dht-hashed", (int8_t) 0);
+	if (ret)
+		gf_log (this->name, GF_LOG_WARNING,
+			"failed to set imess-dht-hashed (ret=%d)", ret);
+
         for (i = 0; i < conf->subvolume_cnt; i++) {
                 if (conf->subvolumes[i] == hashed_subvol)
                         continue;
@@ -5752,6 +5759,7 @@ dht_mkdir (call_frame_t *frame, xlator_t *this,
 {
         dht_local_t  *local  = NULL;
         dht_conf_t   *conf = NULL;
+	int           ret = 0;
         int           op_errno = -1;
         xlator_t     *hashed_subvol = NULL;
 
@@ -5803,6 +5811,9 @@ dht_mkdir (call_frame_t *frame, xlator_t *this,
                 local->layout->commit_hash = conf->vol_commit_hash;
         else
                 local->layout->commit_hash = DHT_LAYOUT_HASH_INVALID;
+
+	/* imess: inform that this is the hashed location */
+	ret = dict_set_int8 (params, "imess-dht-hashed", (int8_t) 1);
 
         STACK_WIND (frame, dht_mkdir_hashed_cbk,
                     hashed_subvol,

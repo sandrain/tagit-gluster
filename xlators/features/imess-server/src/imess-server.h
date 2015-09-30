@@ -70,8 +70,10 @@ struct _ims_priv {
 	char		*db_path;
 	ims_xdb_t	*xdb;
 
-	gf_boolean_t	 lookup_cache;
-	gf_boolean_t	 async_update;
+	gf_boolean_t	 lookup_cache;	/* TODO: enable lookup cache */
+	gf_boolean_t	 async_update;	/* asynchronous xdb update */
+	gf_boolean_t	 dir_hash;	/* store dir index entry only in a
+					   hashed location */
 
 	ims_async_t	*async_ctx;
 };

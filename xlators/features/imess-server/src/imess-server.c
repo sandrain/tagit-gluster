@@ -101,9 +101,15 @@ ims_mkdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	       dict_t *xdata)
 {
 	int ret          = 0;
+	const char *path = NULL;
 	ims_priv_t *priv = NULL;
 
 	if (op_ret == -1)
+		goto out;
+
+	/* don't populate db if non-hashed location. */
+	path = (const char *) cookie;
+	if (path == NULL)
 		goto out;
 
 	priv = this->private;
@@ -124,7 +130,29 @@ int32_t
 ims_mkdir (call_frame_t *frame, xlator_t *this, loc_t *loc, mode_t mode,
 	   mode_t umask, dict_t *xdata)
 {
-	STACK_WIND_COOKIE (frame, ims_mkdir_cbk, (void *) loc->path,
+	int         ret     = 0;
+	int8_t      hashed  = 0;
+	ims_priv_t *priv    = NULL;
+	const char *path    = NULL;
+
+	priv = this->private;
+	path = loc->path;
+
+	if (priv->dir_hash) {
+		ret = dict_get_int8 (xdata, "imess-dht-hashed", &hashed);
+		if (ret) {
+			gf_log (this->name, GF_LOG_WARNING,
+				"ims_mkdir: imess-dht-hashed is not set.");
+			goto wind;
+		}
+
+		/* don't populate if non-hashed location */
+		if (0 == hashed)
+			path = NULL;
+	}
+
+wind:
+	STACK_WIND_COOKIE (frame, ims_mkdir_cbk, (void *) path,
 			   FIRST_CHILD (this),
 			   FIRST_CHILD (this)->fops->mkdir,
 			   loc, mode, umask, xdata);
@@ -851,8 +879,8 @@ init (xlator_t *this)
 	GF_OPTION_INIT ("db-path", priv->db_path, str, out);
 	GF_OPTION_INIT ("enable-lookup-cache", priv->lookup_cache,
 			bool, out);
-	GF_OPTION_INIT ("enable-async-update", priv->async_update,
-			bool, out);
+	GF_OPTION_INIT ("enable-async-update", priv->async_update, bool, out);
+	GF_OPTION_INIT ("enable-dir-hash", priv->dir_hash, bool, out);
 
 	if (priv->async_update)
 		mode = XDB_MODE_ASYNC;
@@ -885,8 +913,9 @@ init (xlator_t *this)
 success:
 	gf_log (this->name, GF_LOG_INFO,
 		"imess-server initialized: db-path=%s, lookup-cache=%d, "
-		"async-update=%d",
-		priv->db_path, priv->lookup_cache, priv->async_update);
+		"async-update=%d, dir-hash=%d",
+		priv->db_path, priv->lookup_cache,
+		priv->async_update, priv->dir_hash);
 	ret = 0;
 
 out:
@@ -981,6 +1010,12 @@ struct volume_options options [] = {
 	  .default_value = "off",
 	  .description = "Turn on the asynchronous database update "
 			 "to speed up.",
+	},
+	{ .key = { "enable-dir-hash" },
+	  .type = GF_OPTION_TYPE_BOOL,
+	  .default_value = "off",
+	  .description = "Turn on the dir hashing to store the directory "
+			 "index record on a single brick",
 	},
 	{ .key = { NULL } },
 };

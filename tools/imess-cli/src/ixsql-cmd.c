@@ -215,6 +215,7 @@ int ixsql_sql_query (ixsql_control_t *ctl, ixsql_query_t *query)
                         goto out;
                 }
 
+		ret = dict_set_str (cmd, "type", "query");
                 ret = dict_set_str (cmd, "sql", query->sql);
         }
 

@@ -312,7 +312,7 @@ int direct_query_callback (void *cdata, int argc, char **argv, char **colname)
 				i == argc - 1 ? '\0' : '|');
 	}
 
-	ret = dict_set_dynstr_with_alloc (xdata, keybuf, buf);
+	ret = dict_set_dynstr (xdata, keybuf, buf);
 	if (ret)
 		return ret;
 
