@@ -151,8 +151,6 @@ close:
 	}
 
 	*err = op_errno;
-	if (operator)
-		GF_FREE (operator);
 	return op_ret;
 }
 
@@ -190,8 +188,6 @@ ims_ipc_query (xlator_t *this, dict_t *xdata_in, dict_t *xdata_out, int *err)
 
 out:
 	*err = op_errno;
-	if (sql)
-		GF_FREE (sql);
 	return op_ret;
 }
 
@@ -276,10 +272,6 @@ ims_ipc_extractor (xlator_t *this, dict_t *xdata_in,
 
 out:
 	*err = op_errno;
-	if (operator)
-		GF_FREE (operator);
-	if (sql)
-		GF_FREE (sql);
 	if (xfiles)
 		dict_unref (xfiles);
 	return op_ret;

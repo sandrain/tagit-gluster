@@ -312,7 +312,7 @@ int direct_query_callback (void *cdata, int argc, char **argv, char **colname)
 				i == argc - 1 ? '\0' : '|');
 	}
 
-	ret = dict_set_dynstr (xdata, keybuf, buf);
+	ret = dict_set_dynstr_with_alloc (xdata, keybuf, buf);
 	if (ret)
 		return ret;
 
@@ -758,7 +758,6 @@ int ims_xdb_direct_query (ims_xdb_t *self, const char *sql, dict_t *xdata)
 		goto out;
 
 	ret = dict_set_uint64 (xdata, "count", cdata.rows);
-
 out:
 	self->db_ret = db_ret;
 	return ret;

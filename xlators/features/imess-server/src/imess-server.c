@@ -149,6 +149,9 @@ ims_mkdir (call_frame_t *frame, xlator_t *this, loc_t *loc, mode_t mode,
 		/* don't populate if non-hashed location */
 		if (0 == hashed)
 			path = NULL;
+
+		/* clear the entry from the xdata */
+		dict_del (xdata, "imess-dht-hashed");
 	}
 
 wind:
@@ -821,11 +824,7 @@ ims_ipc (call_frame_t *frame, xlator_t *this, int op, dict_t *xdata)
 	}
 
 out:
-	if (type)
-		GF_FREE (type);
-
 	STACK_UNWIND_STRICT (ipc, frame, op_ret, op_errno, xdout);
-
 	if (xdout)
 		dict_unref (xdout);
 
