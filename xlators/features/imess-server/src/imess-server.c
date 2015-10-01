@@ -972,10 +972,8 @@ struct xlator_fops fops = {
 	.writev       = ims_writev,
 	.setxattr     = ims_setxattr,
 #if 0
-	.getxattr     = ims_getxattr,
 	.removexattr  = ims_removexattr,
 	.fsetxattr    = ims_fsetxattr,
-	.fgetxattr    = ims_fgetxattr,
 	.fremovexattr = ims_fremovexattr,
 #endif
 	.ftruncate    = ims_ftruncate,
