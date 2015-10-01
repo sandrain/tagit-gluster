@@ -306,18 +306,34 @@ ims_setxattr_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 		goto out;
 
 	priv = this->private;
-	xdb = priv->xdb;
+		xdb = priv->xdb;
 	xattr = cookie;
 
-	ret = ims_xdb_setxattr (xdb, xattr);
-	if (ret)
-		gf_log (this->name, GF_LOG_WARNING,
-			"ims_setxattr_cbk: ims_xdb_setxattr failed "
-			"(db_ret=%d, %s)",
-			xdb->db_ret, ims_xdb_errstr (xdb->db_ret));
+	if (priv->async_update) {
+		ims_task_t task = { {0,0}, };
 
-	if (xattr->sval)
-		GF_FREE ((void *) xattr->sval);
+		task.op = IMS_TASK_INSERT_XATTR;
+		task.attr = *xattr;
+
+		ret = ims_async_put_task (priv->async_ctx, &task);
+		if (ret)
+			gf_log (this->name, GF_LOG_WARNING,
+				"ims_setxattr_cbk: ims_async_put_task failed"
+				" (ret=%d)", ret);
+
+		/* here xattr->sval should be GF_FREE-ed by the async worker */
+	}
+	else {
+		ret = ims_xdb_setxattr (xdb, xattr);
+		if (ret)
+			gf_log (this->name, GF_LOG_WARNING,
+				"ims_setxattr_cbk: ims_xdb_setxattr failed "
+				"(db_ret=%d, %s)",
+				xdb->db_ret, ims_xdb_errstr (xdb->db_ret));
+
+		if (xattr->sval)
+			GF_FREE ((void *) xattr->sval);
+	}
 
 out:
 	STACK_UNWIND_STRICT (setxattr, frame, op_ret, op_errno, xdata);
@@ -358,9 +374,9 @@ ims_setxattr (call_frame_t *frame, xlator_t *this,
 
 wind:
 	STACK_WIND_COOKIE (frame, ims_setxattr_cbk, cookie,
-			FIRST_CHILD (this),
-			FIRST_CHILD (this)->fops->setxattr,
-			loc, dict, flags, xdata);
+			   FIRST_CHILD (this),
+			   FIRST_CHILD (this)->fops->setxattr,
+			   loc, dict, flags, xdata);
 	return 0;
 }
 
