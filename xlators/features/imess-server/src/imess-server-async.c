@@ -27,6 +27,7 @@ static inline ims_task_t *task_dup (ims_task_t *task)
 {
 	ims_task_t *cp_task  = NULL;
 	ims_xdb_file_t *file = NULL;
+	ims_xdb_attr_t *attr = NULL;
 
 	cp_task = GF_CALLOC (1, sizeof(*cp_task), gf_ims_mt_ims_task_t);
 	if (cp_task) {
@@ -43,6 +44,15 @@ static inline ims_task_t *task_dup (ims_task_t *task)
 			file->path = gf_strdup (task->file.path);
 		if (task->file.extra)
 			file->extra = gf_strdup ((char *) task->file.extra);
+
+		attr = &cp_task->attr;
+
+		if (task->attr.gfid)
+			attr->gfid = gf_strdup (task->attr.gfid);
+		if (task->attr.name)
+			attr->name = gf_strdup (task->attr.name);
+		if (task->attr.sval)
+			attr->sval = gf_strdup (task->attr.sval);
 	}
 
 	return cp_task;
@@ -57,6 +67,12 @@ static inline void task_destroy (ims_task_t *task)
 			GF_FREE (task->file.extra);
 		if (task->file.path)
 			GF_FREE ((char *) task->file.path);
+		if (task->attr.gfid)
+			GF_FREE ((char *) task->attr.gfid);
+		if (task->attr.name)
+			GF_FREE ((char *) task->attr.name);
+		if (task->attr.sval)
+			GF_FREE ((char *) task->attr.sval);
 
 		GF_FREE (task);
 	}
@@ -137,7 +153,7 @@ static inline int worker_rename (ims_async_t *self, ims_task_t *task)
 
 static inline int worker_insert_xattr (ims_async_t *self, ims_task_t *task)
 {
-	return 0;
+	return ims_xdb_setxattr (self->xdb, &task->attr);
 }
 
 static inline int worker_remove_xattr (ims_async_t *self, ims_task_t *task)
