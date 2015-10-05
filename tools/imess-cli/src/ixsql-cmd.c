@@ -94,8 +94,10 @@ static int ixsql_cmd_client (ixsql_control_t *ctl, int argc, char **argv)
 		break;
 	case 2:
 		i = atoi (argv[1]);
-		if (i < -1 || i > ctl->num_clients - 1)
-			fprintf (ctl->fp_output, "%d is not valid.\n", i);
+		if (i < -1 || i > ctl->num_clients - 1) {
+			ctl->active_client = -1;
+			fprintf (ctl->fp_output, "set all clients.\n");
+		}
 		else {
 			ctl->active_client = i;
 			fprintf (ctl->fp_output,

@@ -124,7 +124,14 @@ static int process_sql (char *line)
 
 	gettimeofday (&before, NULL);
 
-	if (control.slice_count == 0) {
+	/*
+	 * we only slice for the select query
+	 * FIXME: this comparison is case-sensitive, cannot catch 'SELECT' or
+	 * 'Select'
+	 */
+	if (strncmp ("select", line, strlen("select"))
+	    || control.slice_count == 0)
+	{
 		ret = ixsql_sql_query (&control, &query);
 		if (ret)
 			goto out;
@@ -151,6 +158,38 @@ out:
                 dict_destroy (query.result);
 
         return ret;
+}
+
+static int process_batch (char *file)
+{
+	int ret = 0;
+	uint64_t count = 0;
+	FILE *fp = NULL;
+	char linebuf[4096] = { 0, };
+
+	fp = fopen (file, "r");
+	if (fp == NULL) {
+		perror ("fopen");
+		return -1;
+	}
+
+	while (fgets (linebuf, 4095, fp) != NULL) {
+		ret = process_sql (linebuf);
+		if (ret)
+			goto out;
+		count++;
+	}
+	if (ferror (fp)) {
+		perror ("fgets");
+		ret = -1;
+	}
+
+out:
+	fprintf (control.fp_output,
+		 "%llu records were processed.\n", _llu (count));
+	fclose (fp);
+
+	return ret;
 }
 
 static void ixsql_shell(void)
@@ -189,6 +228,7 @@ static struct option opts[] = {
 	{ .name = "mute", .has_arg = 0, .flag = NULL, .val = 'm' },
 	{ .name = "sql", .has_arg = 1, .flag = NULL, .val = 'q' },
 	{ .name = "slice", .has_arg = 1, .flag = NULL, .val = 's' },
+	{ .name = "sql-file", .has_arg = 1, .flag = NULL, .val ='f' },
 	{ 0, 0, 0, 0 },
 };
 
@@ -204,6 +244,7 @@ static const char *usage_str =
 "  --latency, -l          show query latency (with -q option)\n"
 "  --mute, -m             mute output, useful for measuring the latency\n"
 "  --client, -c [N]       send query to a specific client\n"
+"  --sql-file, -f [file]  batch execute queries in [file]\n"
 "\n\n";
 
 static void print_usage (void)
@@ -224,9 +265,10 @@ int main(int argc, char **argv)
 	uint64_t slice_count = IXSQL_DEFAULT_SLICE;
 	int active_client    = -1;
 	char *sql            = NULL;
+	char *sql_file       = NULL;
 	glfs_t *fs           = NULL;
 
-	while ((op = getopt_long (argc, argv, "c:dhlmq:s:", opts, NULL))
+	while ((op = getopt_long (argc, argv, "c:dhlmq:s:f:", opts, NULL))
 			!= -1) {
 		switch (op) {
 		case 'c':
@@ -241,9 +283,12 @@ int main(int argc, char **argv)
 		case 'm':
 			mute = 1;
 			break;
+		case 'f':
+			sql_file = optarg;
+			/* fall down to direct mode with sql_file */
 		case 'q':
 			direct = 1;
-			sql = optarg;
+			sql = sql_file ? NULL : optarg;
 			break;
 		case 's':
 			slice_count = (uint64_t ) strtoul (optarg, NULL, 0);
@@ -294,8 +339,12 @@ int main(int argc, char **argv)
 	control.show_latency = show_latency;
 	control.direct = direct;
 
-	if (direct)
-		process_sql (sql);
+	if (direct) {
+		if (sql_file)
+			process_batch (sql_file);
+		else
+			process_sql (sql);
+	}
 	else
 		ixsql_shell ();
 
