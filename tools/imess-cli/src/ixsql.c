@@ -6,11 +6,14 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
 #include <errno.h>
 #include <string.h>
 #include <getopt.h>
 #include <time.h>
+#include <signal.h>
 #include <assert.h>
+#include <unistd.h>
 #include <readline/readline.h>
 #include <readline/history.h>
 
@@ -18,8 +21,20 @@
 
 #define PROMPT		"\nixsql> "
 
+static int verbose;
 static ixsql_control_t  control;
 static char qbuf[4096];
+
+static int terminate;
+static struct timeval before;
+static struct timeval after;
+static struct timeval latency;
+
+static void alarm_handler (int signal)
+{
+	if (signal == SIGALRM)
+		terminate = 1;
+}
 
 static inline void welcome(void)
 {
@@ -116,13 +131,8 @@ static int process_sql (char *line)
 {
         int ret               = 0;
 	ixsql_query_t query   = { 0, };
-	struct timeval before = { 0, };
-	struct timeval after  = { 0, };
-	struct timeval lat    = { 0, };
 
 	query.sql = line;
-
-	gettimeofday (&before, NULL);
 
 	/*
 	 * we only slice for the select query
@@ -145,14 +155,6 @@ static int process_sql (char *line)
 			goto out;
 	}
 
-	gettimeofday (&after, NULL);
-
-	if (!control.direct || control.show_latency) {
-		timeval_latency (&lat, &before, &after);
-		fprintf (stdout, "## %llu.%06llu seconds\n",
-				_llu (lat.tv_sec), _llu (lat.tv_usec));
-	}
-
 out:
         if (query.result)
                 dict_destroy (query.result);
@@ -160,7 +162,7 @@ out:
         return ret;
 }
 
-static int process_batch (char *file)
+static uint64_t process_batch (char *file)
 {
 	int ret = 0;
 	uint64_t count = 0;
@@ -174,22 +176,27 @@ static int process_batch (char *file)
 	}
 
 	while (fgets (linebuf, 4095, fp) != NULL) {
+		if (linebuf[0] == '#' || isspace(linebuf[0]))
+			continue;
+
 		ret = process_sql (linebuf);
 		if (ret)
 			goto out;
+
 		count++;
+		fprintf (control.fp_output, "processed: %10llu\r",
+			 _llu(count));
 	}
 	if (ferror (fp)) {
 		perror ("fgets");
 		ret = -1;
 	}
 
+	fputc('\n', control.fp_output);
 out:
-	fprintf (control.fp_output,
-		 "%llu records were processed.\n", _llu (count));
 	fclose (fp);
 
-	return ret;
+	return count;
 }
 
 static void ixsql_shell(void)
@@ -208,8 +215,19 @@ static void ixsql_shell(void)
 
 		if (line[0] == '.')
 			ret = ixsql_control_cmd (&control, line);
-		else
+		else {
+			gettimeofday (&before, NULL);
+
 			ret = process_sql (line);
+
+			gettimeofday (&after, NULL);
+			timeval_latency (&latency, &before, &after);
+
+			fprintf (control.fp_output,
+				 "## elapsed: %llu.%06llu sec\n",
+				 _llu (latency.tv_sec),
+				 _llu (latency.tv_usec));
+		}
 
 		if (ret == IXSQL_QUIT)
 			break;
@@ -221,6 +239,7 @@ static void ixsql_shell(void)
 }
 
 static struct option opts[] = {
+	{ .name = "benchmark", .has_arg = 1, .flag = NULL, .val = 'b' },
 	{ .name = "debug", .has_arg = 0, .flag = NULL, .val = 'd' },
 	{ .name = "help", .has_arg = 0, .flag = NULL, .val = 'h' },
 	{ .name = "client", .has_arg = 1, .flag = NULL, .val = 'c' },
@@ -229,6 +248,7 @@ static struct option opts[] = {
 	{ .name = "sql", .has_arg = 1, .flag = NULL, .val = 'q' },
 	{ .name = "slice", .has_arg = 1, .flag = NULL, .val = 's' },
 	{ .name = "sql-file", .has_arg = 1, .flag = NULL, .val ='f' },
+	{ .name = "verbose", .has_arg = 1, .flag = NULL, .val = 'v' },
 	{ 0, 0, 0, 0 },
 };
 
@@ -237,6 +257,7 @@ static const char *usage_str =
 "usage: xsql [options..] <volume id> <volume server>\n"
 "\n"
 "options:\n"
+"  --benchmark, -b [sec]  benchmark mode for [sec], should be used with -q\n"
 "  --debug, -d            print log messages to stderr\n"
 "  --help, -h             this help message\n"
 "  --sql, -q [sql query]  execute sql directly\n"
@@ -245,6 +266,7 @@ static const char *usage_str =
 "  --mute, -m             mute output, useful for measuring the latency\n"
 "  --client, -c [N]       send query to a specific client\n"
 "  --sql-file, -f [file]  batch execute queries in [file]\n"
+"  --verbose, -v          show more information including error codes\n"
 "\n\n";
 
 static void print_usage (void)
@@ -256,21 +278,29 @@ static int print_debug;
 
 int main(int argc, char **argv)
 {
-        int ret              = 0;
-	int op               = 0;
-	int mute             = 0;
-	int show_latency     = 0;
-	int direct           = 0;
-	int n_clients        = 0;
-	uint64_t slice_count = IXSQL_DEFAULT_SLICE;
-	int active_client    = -1;
-	char *sql            = NULL;
-	char *sql_file       = NULL;
-	glfs_t *fs           = NULL;
+        int ret               = 0;
+	int op                = 0;
+	int mute              = 0;
+	int benchmark         = 0;
+	unsigned int duration = 0;
+	int show_latency      = 0;
+	int direct            = 0;
+	int n_clients         = 0;
+	uint64_t slice_count  = IXSQL_DEFAULT_SLICE;
+	int active_client     = -1;
+	char *sql             = NULL;
+	char *sql_file        = NULL;
+	glfs_t *fs            = NULL;
+	double elapsed_sec    = 0.0F;
+	uint64_t count        = 0;
 
-	while ((op = getopt_long (argc, argv, "c:dhlmq:s:f:", opts, NULL))
+	while ((op = getopt_long (argc, argv, "b:c:dhlmq:s:f:v", opts, NULL))
 			!= -1) {
 		switch (op) {
+		case 'b':
+			benchmark = 1;
+			duration = atol (optarg);
+			break;
 		case 'c':
 			active_client = atoi (optarg);
 			break;
@@ -293,6 +323,9 @@ int main(int argc, char **argv)
 		case 's':
 			slice_count = (uint64_t ) strtoul (optarg, NULL, 0);
 			break;
+		case 'v':
+			verbose = 1;
+			break;
 		case 'h':
 		default:
 			print_usage ();
@@ -313,6 +346,23 @@ int main(int argc, char **argv)
                 fprintf (stderr, "glfs_new: returned NULL\n");
                 return 1;
         }
+
+	if (benchmark) {
+		if (!sql) {
+			fprintf (stderr, "sql query should be given for "
+					 "benchmark mode\n");
+			return 1;
+		}
+
+		if (duration < 1) {
+			fprintf (stderr, "are you serious? (%llu sec)\n",
+					 _llu (duration));
+			return 1;
+		}
+
+		direct = 1;
+		mute = 1;
+	}
 
         ret = glfs_set_volfile_server (fs, "tcp", argv[1], 24007);
 	if (print_debug)
@@ -339,14 +389,42 @@ int main(int argc, char **argv)
 	control.show_latency = show_latency;
 	control.direct = direct;
 
-	if (direct) {
-		if (sql_file)
-			process_batch (sql_file);
-		else
+	if (benchmark) {
+		signal (SIGALRM, alarm_handler);
+		assert (0 == alarm (duration));
+
+		gettimeofday (&before, NULL);
+
+		while (!terminate) {
 			process_sql (sql);
+			count++;
+		}
+
+		gettimeofday (&after, NULL);
+		timeval_latency (&latency, &before, &after);
+		elapsed_sec = timeval_to_sec (&latency);
+	}
+	else if (direct) {
+		gettimeofday (&before, NULL);
+
+		if (sql_file)
+			count = process_batch (sql_file);
+		else {
+			process_sql (sql);
+			count = 1;
+		}
+
+		gettimeofday (&after, NULL);
+		timeval_latency (&latency, &before, &after);
+		elapsed_sec = timeval_to_sec (&latency);
 	}
 	else
 		ixsql_shell ();
+
+	if (direct)
+		fprintf (stdout,
+			 "## %llu queries were processed. %.3lf ops/sec\n",
+			 _llu (count), 1.0 * count / elapsed_sec);
 
         glfs_fini (fs);
 
