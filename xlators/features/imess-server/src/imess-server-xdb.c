@@ -840,6 +840,7 @@ int ims_xdb_direct_query (ims_xdb_t *self, const char *sql, dict_t *xdata)
 		goto out;
 
 	ret = dict_set_uint64 (xdata, "count", cdata.rows);
+	ret = dict_set_int32 (xdata, "ret", db_ret);
 out:
 	self->db_ret = db_ret;
 	return ret;

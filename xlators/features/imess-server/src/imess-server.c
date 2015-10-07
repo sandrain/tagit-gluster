@@ -798,6 +798,11 @@ ims_ipc (call_frame_t *frame, xlator_t *this, int op, dict_t *xdata)
 		goto out;
 	}
 
+	/* put my identity */
+	op_ret = dict_set_str (xdout, "xlator", this->name);
+	if (op_ret)
+		goto out;
+
 	if (strncmp (type, "query", strlen("query")) == 0) {
 		op_ret = ims_ipc_query (this, xdata, xdout, &op_errno);
 		if (op_ret)

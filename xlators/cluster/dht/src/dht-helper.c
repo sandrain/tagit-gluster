@@ -452,6 +452,9 @@ dht_local_wipe (xlator_t *this, dht_local_t *local)
                 local->selfheal.layout = NULL;
         }
 
+	if (local->ipc_req)
+		dict_unref (local->ipc_req);
+
         dht_lock_array_free (local->lock.locks, local->lock.lk_count);
         GF_FREE (local->lock.locks);
 

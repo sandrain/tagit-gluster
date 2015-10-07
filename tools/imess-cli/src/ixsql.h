@@ -43,6 +43,16 @@ timeval_latency (struct timeval *out,
 	out->tv_usec = usec;
 }
 
+static inline double timeval_to_sec (struct timeval *t)
+{
+	double sec = 0.0F;
+
+	sec += t->tv_sec;
+	sec += (double) 0.000001 * t->tv_usec;
+
+	return sec;
+}
+
 #define IXSQL_QUIT		0x12345
 #define IXSQL_DEFAULT_SLICE	200
 

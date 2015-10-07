@@ -7146,36 +7146,33 @@ int32_t dht_ipc_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 {
         dht_local_t  *local         = NULL;
         int           this_call_cnt = 0;
-        call_frame_t *prev          = NULL;
         int           ret           = -1;
         dht_conf_t   *conf          = NULL;
 	uint64_t      i             = 0;
         dict_t       *dict_req      = NULL;
 	data_t       *data          = NULL;
 	uint64_t      xcnt          = 0;
+	uint64_t      count         = 0;
 	char          keybuf[8]     = {0};
 
-        GF_VALIDATE_OR_GOTO ("dht", frame, out);
-        GF_VALIDATE_OR_GOTO ("dht", this, out);
-        GF_VALIDATE_OR_GOTO ("dht", frame->local, out);
-        GF_VALIDATE_OR_GOTO ("dht", cookie, out);
-        GF_VALIDATE_OR_GOTO ("dht", this->private, out);
+        GF_VALIDATE_OR_GOTO ("dht", frame, err);
+        GF_VALIDATE_OR_GOTO ("dht", this, err);
+        GF_VALIDATE_OR_GOTO ("dht", frame->local, err);
+        GF_VALIDATE_OR_GOTO ("dht", cookie, err);
+        GF_VALIDATE_OR_GOTO ("dht", this->private, err);
 
         local  = frame->local;
         conf   = this->private;
 
-        prev   = cookie;
-
-	dict_req = local->ipc_req;
+	if (op_ret == -1)
+		goto out;
+	ret = dict_get_uint64 (xdata, "count", &xcnt);
+	if (ret)
+		goto out;
 
         LOCK (&frame->lock);
         {
-		if (op_ret == -1)
-			goto unlock;
-
-		ret = dict_get_uint64 (xdata, "count", &xcnt);
-		if (ret)
-			goto unlock;
+		dict_req = local->ipc_req;
 
 		for (i = 0; i < xcnt; i++) {
 			sprintf(keybuf, "%llu", (unsigned long long) i);
@@ -7185,22 +7182,20 @@ int32_t dht_ipc_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 				(unsigned long long) local->ipc_req_pos++);
 			dict_set (dict_req, keybuf, data);
 		}
+
+		ret = dict_get_uint64 (dict_req, "count", &count);
+		if (ret)
+			goto unlock;
+
+		ret = dict_set_uint64 (dict_req, "count", count+xcnt);
 	}
 unlock:
         UNLOCK (&frame->lock);
-
-        this_call_cnt = dht_frame_return (frame);
-        if (is_last_call (this_call_cnt)) {
-		ret = dict_set_uint64 (dict_req, "count", local->ipc_req_pos);
-		if (ret) {
-			/** handle error */
-		}
-                DHT_STACK_UNWIND (ipc, frame, 0, 0, dict_req);
-		if (dict_req)
-			dict_unref (dict_req);
-        }
-
 out:
+        this_call_cnt = dht_frame_return (frame);
+        if (is_last_call (this_call_cnt))
+                DHT_STACK_UNWIND (ipc, frame, 0, 0, dict_req);
+err:
 	return ret;
 }
 
@@ -7246,7 +7241,16 @@ int dht_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata)
 	}
 
 	local->call_cnt = call_cnt;
+	local->ipc_req_pos = 0;
 	local->ipc_req = dict_new ();
+	if (!local->ipc_req)
+		goto err;
+
+	ret = dict_set_uint64 (local->ipc_req, "count", 0);
+	if (ret) {
+		dict_unref (local->ipc_req);
+		goto err;
+	}
 
 	for (i = 0; i < conf->subvolume_cnt; i++) {
 		subvol = conf->subvolumes[i];
