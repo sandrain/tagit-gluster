@@ -7141,45 +7141,79 @@ err:
 }
 #endif
 
+struct _dht_ipc_data {
+	dict_t     *xdata;
+	uint64_t    pos;
+	int         call_cnt;
+	gf_lock_t   lock;
+};
+
+typedef struct _dht_ipc_data dht_ipc_data_t;
+
+static inline int dht_ipc_return (dht_ipc_data_t *data)
+{
+        int this_call_cnt = -1;
+
+        if (!data)
+                return -1;
+
+        LOCK (&data->lock);
+        {
+                this_call_cnt = --data->call_cnt;
+        }
+        UNLOCK (&data->lock);
+
+        return this_call_cnt;
+}
+
 int32_t dht_ipc_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 		int32_t op_ret, int32_t op_errno, dict_t *xdata)
 {
-        dht_local_t  *local         = NULL;
-        int           this_call_cnt = 0;
-        int           ret           = -1;
-        dht_conf_t   *conf          = NULL;
-	uint64_t      i             = 0;
-        dict_t       *dict_req      = NULL;
-	data_t       *data          = NULL;
-	uint64_t      xcnt          = 0;
-	uint64_t      count         = 0;
-	char          keybuf[8]     = {0};
+	dht_ipc_data_t *ipc_data     = NULL;
+        int            this_call_cnt = 0;
+        int            ret           = -1;
+        dht_conf_t    *conf          = NULL;
+	uint64_t       i             = 0;
+        dict_t        *dict_req      = NULL;
+	data_t        *data          = NULL;
+	uint64_t       xcnt          = 0;
+	char          *xlname        = NULL;
+	int32_t        db_ret        = 0;
+	uint64_t       count         = 0;
+	char           keybuf[64]    = {0,};
 
-        GF_VALIDATE_OR_GOTO ("dht", frame, err);
-        GF_VALIDATE_OR_GOTO ("dht", this, err);
-        GF_VALIDATE_OR_GOTO ("dht", frame->local, err);
-        GF_VALIDATE_OR_GOTO ("dht", cookie, err);
-        GF_VALIDATE_OR_GOTO ("dht", this->private, err);
+        GF_VALIDATE_OR_GOTO ("dht", frame, out);
+        GF_VALIDATE_OR_GOTO ("dht", this, out);
+        GF_VALIDATE_OR_GOTO ("dht", cookie, out);
+        GF_VALIDATE_OR_GOTO ("dht", this->private, out);
 
-        local  = frame->local;
         conf   = this->private;
+	ipc_data = cookie;
 
 	if (op_ret == -1)
 		goto out;
+
+	/* extract metadata */
 	ret = dict_get_uint64 (xdata, "count", &xcnt);
 	if (ret)
 		goto out;
+	ret = dict_get_int32 (xdata, "ret", &db_ret);
+	if (ret)
+		goto out;
+	ret = dict_get_str (xdata, "xlator", &xlname);
+	if (ret)
+		goto out;
 
-        LOCK (&frame->lock);
-        {
-		dict_req = local->ipc_req;
+	dict_req = ipc_data->xdata;
 
+	LOCK (&ipc_data->lock);
+	{
 		for (i = 0; i < xcnt; i++) {
 			sprintf(keybuf, "%llu", (unsigned long long) i);
 			data = dict_get (xdata, keybuf);
 
 			sprintf(keybuf, "%llu",
-				(unsigned long long) local->ipc_req_pos++);
+				(unsigned long long) ipc_data->pos++);
 			dict_set (dict_req, keybuf, data);
 		}
 
@@ -7187,15 +7221,28 @@ int32_t dht_ipc_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 		if (ret)
 			goto unlock;
 
-		ret = dict_set_uint64 (dict_req, "count", count+xcnt);
+		ret = dict_set_uint64 (dict_req, "count", count + xcnt);
+		if (ret)
+			goto unlock;
+
+		sprintf (keybuf, "%s:count", xlname);
+		ret = dict_set_uint64 (dict_req, keybuf, xcnt);
+		if (ret)
+			goto unlock;
+
+		sprintf (keybuf, "%s:ret", xlname);
+		ret = dict_set_int32 (dict_req, keybuf, db_ret);
+		if (ret)
+			goto unlock;
 	}
 unlock:
-        UNLOCK (&frame->lock);
+	UNLOCK (&ipc_data->lock);
+
 out:
-        this_call_cnt = dht_frame_return (frame);
-        if (is_last_call (this_call_cnt))
+	this_call_cnt = dht_ipc_return (ipc_data);
+	if (is_last_call (this_call_cnt))
                 DHT_STACK_UNWIND (ipc, frame, 0, 0, dict_req);
-err:
+
 	return ret;
 }
 
@@ -7209,7 +7256,7 @@ int dht_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata)
 	int             ret = 0;
 	char           *clist_str = NULL;
         dht_conf_t     *conf = NULL;
-        dht_local_t    *local = NULL;
+	dht_ipc_data_t  ipc_data = { 0, };
 	xlator_t       *subvol = NULL;
         int             i = 0;
         int             call_cnt = 0;
@@ -7222,7 +7269,6 @@ int dht_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata)
         GF_VALIDATE_OR_GOTO ("dht", this, out);
 
         conf = this->private;
-        local = dht_local_init (frame, NULL, NULL, GF_FOP_IPC);
 
 	ret = dict_get_str (xdata, "clients", &clist_str);
 	if (ret)
@@ -7240,15 +7286,17 @@ int dht_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata)
 		}
 	}
 
-	local->call_cnt = call_cnt;
-	local->ipc_req_pos = 0;
-	local->ipc_req = dict_new ();
-	if (!local->ipc_req)
+	ipc_data.xdata = dict_new ();
+	if (!ipc_data.xdata)
 		goto err;
 
-	ret = dict_set_uint64 (local->ipc_req, "count", 0);
+	ipc_data.call_cnt = call_cnt;
+	ipc_data.pos = 0;
+	LOCK_INIT (&ipc_data.lock);
+
+	ret = dict_set_uint64 (ipc_data.xdata, "count", 0);
 	if (ret) {
-		dict_unref (local->ipc_req);
+		dict_unref (ipc_data.xdata);
 		goto err;
 	}
 
@@ -7257,8 +7305,8 @@ int dht_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata)
 		if (!all && gf_strstr(clist_str, ",", subvol->name))
 			continue;
 
-		STACK_WIND (frame, dht_ipc_cbk, subvol, subvol->fops->ipc,
-			    op, xdata);
+		STACK_WIND_COOKIE (frame, dht_ipc_cbk, (void *) &ipc_data,
+				   subvol, subvol->fops->ipc, op, xdata);
 	}
 
 	return 0;
@@ -7267,6 +7315,8 @@ call_default:
 	return default_ipc (frame, this, op, xdata);
 out:
 	DHT_STACK_UNWIND (ipc, frame, -1, EINVAL, NULL);
+	if (ipc_data.xdata)
+		dict_unref (ipc_data.xdata);
 err:
 	return -1;
 }
