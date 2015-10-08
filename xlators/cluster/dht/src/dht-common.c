@@ -7256,7 +7256,7 @@ int dht_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata)
 	int             ret = 0;
 	char           *clist_str = NULL;
         dht_conf_t     *conf = NULL;
-	dht_ipc_data_t  ipc_data = { 0, };
+	dht_ipc_data_t *ipc_data = NULL;
 	xlator_t       *subvol = NULL;
         int             i = 0;
         int             call_cnt = 0;
@@ -7286,17 +7286,21 @@ int dht_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata)
 		}
 	}
 
-	ipc_data.xdata = dict_new ();
-	if (!ipc_data.xdata)
+	ipc_data = CALLOC (1, sizeof (*ipc_data));
+	if (!ipc_data)
 		goto err;
 
-	ipc_data.call_cnt = call_cnt;
-	ipc_data.pos = 0;
-	LOCK_INIT (&ipc_data.lock);
+	ipc_data->xdata = dict_new ();
+	if (!ipc_data->xdata)
+		goto err;
 
-	ret = dict_set_uint64 (ipc_data.xdata, "count", 0);
+	ipc_data->call_cnt = call_cnt;
+	ipc_data->pos = 0;
+	LOCK_INIT (&ipc_data->lock);
+
+	ret = dict_set_uint64 (ipc_data->xdata, "count", 0);
 	if (ret) {
-		dict_unref (ipc_data.xdata);
+		dict_unref (ipc_data->xdata);
 		goto err;
 	}
 
@@ -7305,7 +7309,7 @@ int dht_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata)
 		if (!all && gf_strstr(clist_str, ",", subvol->name))
 			continue;
 
-		STACK_WIND_COOKIE (frame, dht_ipc_cbk, (void *) &ipc_data,
+		STACK_WIND_COOKIE (frame, dht_ipc_cbk, (void *) ipc_data,
 				   subvol, subvol->fops->ipc, op, xdata);
 	}
 
@@ -7315,8 +7319,11 @@ call_default:
 	return default_ipc (frame, this, op, xdata);
 out:
 	DHT_STACK_UNWIND (ipc, frame, -1, EINVAL, NULL);
-	if (ipc_data.xdata)
-		dict_unref (ipc_data.xdata);
+	if (ipc_data) {
+		if (ipc_data->xdata)
+			dict_unref (ipc_data->xdata);
+		FREE (ipc_data);
+	}
 err:
 	return -1;
 }

@@ -75,9 +75,10 @@ struct _ixsql_control {
 	int              show_latency;
 	uint64_t         slice_count;
 	uint32_t         num_clients;
-	int              active_client;		/* -1 for all */
+	int              active_clients;
 	char            *volname;
 	char            *volserver;
+	char             cli_mask[0];		/* client mask: 1 active */
 };
 
 typedef struct _ixsql_control ixsql_control_t;
