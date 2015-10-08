@@ -67,42 +67,69 @@ static int ixsql_cmd_slice (ixsql_control_t *ctl, int argc, char **argv)
 	return 0;
 }
 
+static inline void set_clients (ixsql_control_t *ctl, int cli)
+{
+	int i = 0;
+	int n_active = 0;
+
+	if (cli == -1) {
+		for (i = 0; i < ctl->num_clients; i++)
+			ctl->cli_mask[i] = 1;
+
+		ctl->active_clients = ctl->num_clients;
+		return;
+	}
+	else if (cli == -2) {
+		for (i = 0; i < ctl->num_clients; i++)
+			ctl->cli_mask[i] = 0;
+
+		ctl->active_clients = 0;
+		return;
+	}
+
+	ctl->cli_mask[cli] = ctl->cli_mask[cli] ? 0 : 1;
+
+	for (i = 0; i < ctl->num_clients; i++)
+		if (ctl->cli_mask[i])
+			n_active++;
+
+	ctl->active_clients = n_active;
+}
+
 static int ixsql_cmd_client (ixsql_control_t *ctl, int argc, char **argv)
 {
 	int i         = 0;
-	char star     = 0;
 
 	switch (argc)  {
 	case 1:
-		fprintf (ctl->fp_output, "total %d clients, sending query to ",
-				ctl->num_clients);
-		if (ctl->active_client < 0)
-			fprintf (ctl->fp_output, "all clients:\n");
-		else
-			fprintf (ctl->fp_output, "client %d:\n",
-					ctl->active_client);
+		fprintf (ctl->fp_output,
+			 "total %d clients, sending query to %d clients:\n",
+			 ctl->num_clients, ctl->active_clients);
 
-		for (i = 0; i < ctl->num_clients; i++) {
-			star = 1;
-			if (ctl->active_client >= 0 && ctl->active_client != i)
-				star = 0;
-
+		for (i = 0; i < ctl->num_clients; i++)
 			fprintf (ctl->fp_output, "[%3d] %s-client-%d%s\n",
-					i, ctl->volname, i,
-					star ? " [*]" : "");
-		}
+				 i, ctl->volname, i,
+				 ctl->cli_mask[i] ? " [*]" : "");
 		break;
 	case 2:
-		i = atoi (argv[1]);
-		if (i < -1 || i > ctl->num_clients - 1) {
-			ctl->active_client = -1;
-			fprintf (ctl->fp_output, "set all clients.\n");
-		}
+		if (!strcmp ("all", argv[1]))
+			set_clients (ctl, -1);
+		else if (!strcmp ("none", argv[1]))
+			set_clients (ctl, -2);
 		else {
-			ctl->active_client = i;
-			fprintf (ctl->fp_output,
-				 "active client is set to %d\n",
-				 ctl->active_client);
+			char *delim = ",";
+			char *sptr = NULL;
+			char *token = NULL;
+
+			token = strtok_r (argv[1], delim, &sptr);
+			if (!token)
+				fprintf (ctl->fp_output,
+					 "%s is not understood\n", argv[1]);
+
+			do {
+				set_clients (ctl, atoi (token));
+				token = strtok_r (NULL, delim, &sptr);
+			} while (token);
 		}
 		break;
 	default:
@@ -207,12 +234,14 @@ process_control_cmd (ixsql_control_t *ctl, int argc, char **argv)
 int ixsql_sql_query (ixsql_control_t *ctl, ixsql_query_t *query)
 {
         int ret               = 0;
+	int i                 = 0;
 	glfs_t *fs            = NULL;
         dict_t *cmd           = NULL;
         dict_t *result        = NULL;
         struct timeval before = { 0, };
         struct timeval after  = { 0, };
-	char buf[128]         = { 0, };
+	char *pos             = NULL;
+	char buf[1024]        = { 0, };
 
 	fs = ctl->gluster;
 
@@ -227,11 +256,23 @@ int ixsql_sql_query (ixsql_control_t *ctl, ixsql_query_t *query)
                 ret = dict_set_str (cmd, "sql", query->sql);
         }
 
-	if (ctl->active_client == -1)
-                ret = dict_set_str (cmd, "clients", "all");
+	if (ctl->active_clients <= 0) {
+		fprintf (ctl->fp_output, "no active clients set.\n");
+		goto out;
+	}
+	else if (ctl->active_clients == ctl->num_clients)
+		ret = dict_set_str (cmd, "clients", "all");
 	else {
-		sprintf(buf, "%s-client-%d", ctl->volname, ctl->active_client);
-                ret = dict_set_str (cmd, "clients", buf);
+		pos = buf;
+		for (i = 0; i < ctl->num_clients; i++) {
+			if (!ctl->cli_mask[i])
+				continue;
+
+			pos += sprintf (pos, "%s-client-%d,", ctl->volname, i);
+		}
+		buf[strlen(buf) - 1] = '\0';	/* remove the final ',' */
+
+		ret = dict_set_str (cmd, "clients", buf);
 	}
 
         gettimeofday (&before, NULL);
