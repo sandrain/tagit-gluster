@@ -68,11 +68,6 @@ static ixsql_control_t *init_control (glfs_t *fs, char *volname,
 	return ctl;
 }
 
-static void print_single_row (FILE *fp, char *row)
-{
-	fprintf (fp, "%s\n", row);
-}
-
 static int read_client_number (glfs_t *fs, char *volname)
 {
 	int count = 0;
@@ -141,7 +136,7 @@ static inline int print_data (ixsql_query_t *query)
 	for (i = 0; i < count; i++) {
 		sprintf (keybuf, "%llu", _llu (i));
                 ret = dict_get_str (result, keybuf, &row);
-		print_single_row (control->fp_output, row);
+		fputs (row, control->fp_output);
 	}
 
 	return 0;
