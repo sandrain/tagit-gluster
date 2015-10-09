@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <string.h>
+#include <strings.h>
 #include <getopt.h>
 #include <time.h>
 #include <signal.h>
@@ -24,6 +25,9 @@
 static int verbose;
 static ixsql_control_t  *control;
 static char qbuf[4096];
+
+/* NOTE: don't do slicing for the active executions */
+static char *operator;
 
 static int terminate;
 static struct timeval before;
@@ -93,29 +97,82 @@ static int read_client_number (glfs_t *fs, char *volname)
 	return count;
 }
 
-static int64_t print_result (ixsql_query_t *query)
+static int
+print_metadata_fn (dict_t *dict, char *key, data_t *value, void *data)
 {
-        int ret             = 0;
-        uint64_t i          = 0;
-        uint64_t count      = 0;
-        char keybuf[12]     = { 0, };
-        char *row           = NULL;
-	dict_t *xdata       = NULL;
+	int ret        = 0;
+	int32_t op_ret = 0;
+	uint64_t count = 0;
+	double runtime = .0F;
+	char *pos      = NULL;
 
-	xdata = query->result;
+	if (NULL != (pos = strstr (key, ":ret"))) {
+		op_ret = data_to_int32 (value);
+		fprintf (control->fp_output, "## %s = %d\n", key, op_ret);
+	}
+	else if (NULL != (pos = strstr (key, ":count"))) {
+		count = data_to_uint64 (value);
+		fprintf (control->fp_output, "## %s = %llu\n",
+					     key, _llu (count));
+	}
+	else if (NULL != (pos = strstr (key, ":runtime"))) {
+		ret = dict_get_double (dict, key, &runtime);
+		fprintf (control->fp_output, "## %s = %.6f\n", key, runtime);
+	}
+	else {
+		/* no idea, ignore for now. */
+	}
 
-        ret = dict_get_uint64 (xdata, "count", &count);
-        if (ret)
-                return -1;
+	return 0;
+}
 
-        for (i = 0; i < count; i++) {
-                sprintf (keybuf, "%llu", _llu (i));
-                ret = dict_get_str (xdata, keybuf, &row);
+static inline int print_data (ixsql_query_t *query)
+{
+	int ret              = 0;
+	uint64_t i           = 0;
+	uint64_t count       = 0;
+        char keybuf[16]      = { 0, };
+	char *row            = NULL;
+	dict_t *result       = NULL;
 
+	count = query->count;
+	result = query->result;
+
+	for (i = 0; i < count; i++) {
+		sprintf (keybuf, "%llu", _llu (i));
+                ret = dict_get_str (result, keybuf, &row);
 		print_single_row (control->fp_output, row);
-        }
+	}
 
-        return count;
+	return 0;
+}
+
+static inline int64_t print_better_result (ixsql_query_t *query)
+{
+	int ret        = 0;
+	uint64_t count = 0;
+	dict_t *result = NULL;
+
+	result = query->result;
+
+	ret = dict_get_uint64 (result, "count", &count);
+	if (ret)
+		goto err;
+
+	query->count = count;
+
+	if (verbose)
+		ret = dict_foreach_fnmatch (result, "*:*",
+					    print_metadata_fn, query);
+
+	ret = print_data (query);
+err:
+	if (ret) {
+		fprintf (stderr, "cannot parse the output (%d)\n", ret);
+		ret = -1;
+	}
+
+	return ret;
 }
 
 static inline int process_sql_sliced (ixsql_query_t *query)
@@ -136,7 +193,7 @@ static inline int process_sql_sliced (ixsql_query_t *query)
 		if (ret)
 			goto out;
 
-		res_count = print_result (&my_query);
+		res_count = print_better_result (&my_query);
 		if (res_count == -1)
 			goto out;
 
@@ -162,22 +219,17 @@ static inline int process_sql (char *line)
 	 * FIXME: this comparison is case-sensitive, cannot catch 'SELECT' or
 	 * 'Select'
 	 */
-	if (strncmp ("select", line, strlen("select"))
+	if (strncasecmp ("select", line, strlen("select"))
 	    || control->slice_count == 0)
 	{
 		ret = ixsql_sql_query (control, &query);
 		if (ret)
 			goto out;
 
-		print_result (&query);
-
+		print_better_result (&query);
 	}
-	else {
+	else
 		ret = process_sql_sliced (&query);
-		if (ret)
-			goto out;
-	}
-
 out:
         if (query.result)
                 dict_destroy (query.result);
@@ -185,8 +237,33 @@ out:
         return ret;
 }
 
-static void set_test_clients (int n_clients)
+static inline int process_exec (char *line)
 {
+        int ret               = 0;
+	ixsql_query_t query   = { 0, };
+
+	/* FIXME: make the comparison more intelligent (dealing with spaces) */
+	if (strncasecmp (line, "select path from",
+			 strlen ("select path from")))
+	{
+		fprintf (stderr, "the query should fetch 'path' for -exec");
+		return -1;
+	}
+
+	control->slice_count = 0;
+	query.sql = line;
+	query.operator = operator;
+
+	ret = ixsql_exec (control, &query);
+	if (ret)
+		goto out;
+
+	print_better_result (&query);
+out:
+	if (query.result)
+		dict_destroy (query.result);
+
+	return ret;
 }
 
 static uint64_t process_batch (char *file)
@@ -267,14 +344,15 @@ static void ixsql_shell(void)
 
 static struct option opts[] = {
 	{ .name = "benchmark", .has_arg = 1, .flag = NULL, .val = 'b' },
-	{ .name = "debug", .has_arg = 0, .flag = NULL, .val = 'd' },
-	{ .name = "help", .has_arg = 0, .flag = NULL, .val = 'h' },
 	{ .name = "client", .has_arg = 1, .flag = NULL, .val = 'c' },
+	{ .name = "debug", .has_arg = 0, .flag = NULL, .val = 'd' },
+	{ .name = "exec", .has_arg = 1, .flag = NULL, .val = 'x' },
+	{ .name = "help", .has_arg = 0, .flag = NULL, .val = 'h' },
 	{ .name = "latency", .has_arg = 0, .flag = NULL, .val = 'l' },
 	{ .name = "mute", .has_arg = 0, .flag = NULL, .val = 'm' },
 	{ .name = "num-clients", .has_arg = 1, .flag = NULL, .val = 'n' },
-	{ .name = "sql", .has_arg = 1, .flag = NULL, .val = 'q' },
 	{ .name = "slice", .has_arg = 1, .flag = NULL, .val = 's' },
+	{ .name = "sql", .has_arg = 1, .flag = NULL, .val = 'q' },
 	{ .name = "sql-file", .has_arg = 1, .flag = NULL, .val ='f' },
 	{ .name = "verbose", .has_arg = 1, .flag = NULL, .val = 'v' },
 	{ 0, 0, 0, 0 },
@@ -287,6 +365,7 @@ static const char *usage_str =
 "options:\n"
 "  --benchmark, -b [sec]  benchmark mode for [sec], should be used with -q\n"
 "  --debug, -d            print log messages to stderr\n"
+"  --exec, -x [operator]  active execution for the result files\n"
 "  --help, -h             this help message\n"
 "  --sql, -q [sql query]  execute sql directly\n"
 "  --slice, -s [N]        fetch [N] result per a query (with -q option)\n"
@@ -324,8 +403,10 @@ int main(int argc, char **argv)
 	uint64_t count        = 0;
 	double elapsed_sec    = 0.0F;
 
-	while ((op = getopt_long (argc, argv, "b:c:df:hlmn:q:s:v", opts, NULL))
-			!= -1) {
+	while ((op = getopt_long (argc, argv,
+				  "b:c:df:hlmn:q:s:vx:",
+				  opts, NULL)) != -1)
+	{
 		switch (op) {
 		case 'b':
 			benchmark = 1;
@@ -337,6 +418,8 @@ int main(int argc, char **argv)
 		case 'd':
 			print_debug = 1;
 			break;
+		case 'v':
+			verbose = 1;
 		case 'l':
 			show_latency = 1;
 			break;
@@ -356,8 +439,8 @@ int main(int argc, char **argv)
 		case 's':
 			slice_count = (uint64_t ) strtoul (optarg, NULL, 0);
 			break;
-		case 'v':
-			verbose = 1;
+		case 'x':
+			operator = optarg;
 			break;
 		case 'h':
 		default:
@@ -392,9 +475,6 @@ int main(int argc, char **argv)
 					 _llu (duration));
 			return 1;
 		}
-
-		if (n_test_clients > 0)
-			set_test_clients (n_test_clients);
 
 		direct = 1;
 		mute = 1;
@@ -462,14 +542,16 @@ int main(int argc, char **argv)
 		goto out;
 	}
 	else if (direct) {
+		count = 1;
+
 		gettimeofday (&before, NULL);
 
-		if (sql_file)
+		if (operator)
+			process_exec (sql);
+		else if (sql_file)
 			count = process_batch (sql_file);
-		else {
+		else
 			process_sql (sql);
-			count = 1;
-		}
 
 		gettimeofday (&after, NULL);
 		timeval_latency (&latency, &before, &after);
@@ -479,7 +561,7 @@ int main(int argc, char **argv)
 		ixsql_shell ();
 
 out:
-	if (direct)
+	if (direct && show_latency)
 		fprintf (stdout,
 			 "## %llu queries were processed in "
 			 "%.3f sec (%.3lf ops/sec)\n",

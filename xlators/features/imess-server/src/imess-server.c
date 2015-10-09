@@ -769,10 +769,13 @@ ims_ipc_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 int32_t
 ims_ipc (call_frame_t *frame, xlator_t *this, int op, dict_t *xdata)
 {
-	int op_ret       = -1;
-	int op_errno     = 0;
-	dict_t *xdout    = NULL;
-	char *type       = NULL;
+	int op_ret           = -1;
+	int op_errno         = 0;
+	ims_priv_t *priv     = NULL;
+	dict_t *xdout        = NULL;
+	char *type           = NULL;
+	char *pos            = NULL;
+	char idbuf[PATH_MAX] = { 0, };
 
 	if (op != IMESS_IPC_OP) {
 		STACK_WIND (frame, ims_ipc_cbk,
@@ -780,6 +783,8 @@ ims_ipc (call_frame_t *frame, xlator_t *this, int op, dict_t *xdata)
 			    op, xdata);
 		return 0;
 	}
+
+	priv = this->private;
 
 	/* read the request type */
 	op_ret = dict_get_str (xdata, "type", &type);
@@ -799,12 +804,21 @@ ims_ipc (call_frame_t *frame, xlator_t *this, int op, dict_t *xdata)
 	}
 
 	/* put my identity */
-	op_ret = dict_set_str (xdout, "xlator", this->name);
+	gethostname (idbuf, 64);
+	pos = &idbuf[strlen (idbuf)];
+	sprintf (pos, "-%s", priv->db_path);
+
+	op_ret = dict_set_str (xdout, "from", idbuf);
 	if (op_ret)
 		goto out;
 
 	if (strncmp (type, "query", strlen("query")) == 0) {
 		op_ret = ims_ipc_query (this, xdata, xdout, &op_errno);
+		if (op_ret)
+			goto out;
+	}
+	else if (strncmp (type, "exec", strlen("exec")) == 0) {
+		op_ret = ims_ipc_exec (this, xdata, xdout, &op_errno);
 		if (op_ret)
 			goto out;
 	}
@@ -852,10 +866,12 @@ mem_acct_init (xlator_t *this)
 int32_t
 init (xlator_t *this)
 {
-	int ret            = -1;
-	int mode	   = 0;
-	dict_t *options    = NULL;
-	ims_priv_t *priv   = NULL;
+	int ret                = -1;
+	int mode	       = 0;
+	dict_t *options        = NULL;
+	ims_priv_t *priv       = NULL;
+	char pathbuf[PATH_MAX] = { 0, };
+	char *pos              = NULL;
 
 	GF_VALIDATE_OR_GOTO ("imess-server", this, out);
 
@@ -881,6 +897,12 @@ init (xlator_t *this)
 			bool, out);
 	GF_OPTION_INIT ("enable-async-update", priv->async_update, bool, out);
 	GF_OPTION_INIT ("enable-dir-hash", priv->dir_hash, bool, out);
+
+	/* FIXME: get the brick path */
+	sprintf (pathbuf, "%s", priv->db_path);
+	pos = strrchr (pathbuf, '/');
+	sprintf (++pos, "brick");
+	priv->brick_path = gf_strdup (pathbuf);
 
 	if (priv->async_update)
 		mode = XDB_MODE_ASYNC;
@@ -912,8 +934,11 @@ init (xlator_t *this)
 
 success:
 	gf_log (this->name, GF_LOG_INFO,
-		"imess-server initialized: db-path=%s, lookup-cache=%d, "
+		"imess-server initialized: "
+		"brick-path=%s,"
+		"db-path=%s, lookup-cache=%d, "
 		"async-update=%d, dir-hash=%d",
+		priv->brick_path,
 		priv->db_path, priv->lookup_cache,
 		priv->async_update, priv->dir_hash);
 	ret = 0;
@@ -936,8 +961,11 @@ fini (xlator_t *this)
 
 	priv = this->private;
 
-	if (priv)
+	if (priv) {
+		if (priv->brick_path)
+			GF_FREE (priv->brick_path);
 		GF_FREE (priv);
+	}
 
 	return;
 }
