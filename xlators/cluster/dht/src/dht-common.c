@@ -7180,6 +7180,7 @@ int32_t dht_ipc_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	char          *xlname        = NULL;
 	int32_t        db_ret        = 0;
 	uint64_t       count         = 0;
+	double         runtime       = .0F;
 	char           keybuf[64]    = {0,};
 
         GF_VALIDATE_OR_GOTO ("dht", frame, out);
@@ -7194,13 +7195,10 @@ int32_t dht_ipc_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 		goto out;
 
 	/* extract metadata */
-	ret = dict_get_uint64 (xdata, "count", &xcnt);
-	if (ret)
-		goto out;
-	ret = dict_get_int32 (xdata, "ret", &db_ret);
-	if (ret)
-		goto out;
-	ret = dict_get_str (xdata, "xlator", &xlname);
+	ret  = dict_get_uint64 (xdata, "count", &xcnt);
+	ret |= dict_get_int32 (xdata, "ret", &db_ret);
+	ret |= dict_get_str (xdata, "from", &xlname);
+	ret |= dict_get_double (xdata, "runtime", &runtime);
 	if (ret)
 		goto out;
 
@@ -7232,6 +7230,11 @@ int32_t dht_ipc_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 
 		sprintf (keybuf, "%s:ret", xlname);
 		ret = dict_set_int32 (dict_req, keybuf, db_ret);
+		if (ret)
+			goto unlock;
+
+		sprintf (keybuf, "%s:runtime", xlname);
+		ret = dict_set_double (dict_req, keybuf, runtime);
 		if (ret)
 			goto unlock;
 	}

@@ -63,6 +63,8 @@ static inline double timeval_to_sec (struct timeval *t)
 struct _ixsql_query {
 	char           *sql;
 	dict_t         *result;
+	char           *operator;
+	uint64_t        count;
 	struct timeval  latency;
 };
 
@@ -84,6 +86,8 @@ struct _ixsql_control {
 typedef struct _ixsql_control ixsql_control_t;
 
 int ixsql_sql_query (ixsql_control_t *ctl, ixsql_query_t *query);
+
+int ixsql_exec (ixsql_control_t *ctl, ixsql_query_t *query);
 
 int ixsql_control_cmd (ixsql_control_t *control, const char *line);
 

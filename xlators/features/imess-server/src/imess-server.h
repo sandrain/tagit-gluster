@@ -67,6 +67,9 @@ typedef struct _ims_async ims_async_t;
  */
 
 struct _ims_priv {
+	char            *brick_path;	/* FIXME: this should be acquired from
+					   the storage/posix
+					   NOTE: no slash at the end */
 	char		*db_path;
 	ims_xdb_t	*xdb;
 
@@ -118,6 +121,24 @@ int ims_async_put_task (ims_async_t *ctx, ims_task_t *task);
  *   queries received.
  *
  * ## 2. active requests
+ * - follow the concept of 'find .. -exec ..'
+ * - server will run any specified code with each file (from the query result),
+ *   and the result will be back to the application.
+ *
+ * - request format:
+ *   @op: IMESS_IPC_OP
+ *   @xdata: [ 'type': 'exec', 'sql': any sql returns file list,
+ *             'operator': 'path' ]
+ *
+ * - return format:
+ *   @xdata(out): [ 'from': <the xlator returns this result>,
+ *                  'ret': <return code from the execution (int32_t)>,
+ *                  'runtime': <time taken in seconds (double)>,
+ *                  'count': <number of output lines (uint64_t)>,
+ *                  '0': <first line>, '1': <second line>, (char *) ... ]
+ *
+ * --- below obsolte (probably future work) ---
+ * ## 2. active requests
  * - currently two types of active operations are supported, a filter and an
  *   extractor.
  *
@@ -167,10 +188,62 @@ int ims_async_put_task (ims_async_t *ctx, ims_task_t *task);
 int32_t ims_ipc_query (xlator_t *this,
 		       dict_t *xdata_in, dict_t *xdata_out, int *err);
 
+int32_t ims_ipc_exec (xlator_t *this,
+		      dict_t *xdata_in, dict_t *xdata_out, int *err);
+
 int32_t ims_ipc_filter (xlator_t *this,
 		        dict_t *xdata_in, dict_t *xdata_out, int *err);
 
 int32_t ims_ipc_extractor (xlator_t *this,
 		           dict_t *xdata_in, dict_t *xdata_out, int *err);
+
+/*
+ * helpers
+ */
+
+#include <sys/time.h>
+
+static inline void
+timeval_latency (struct timeval *out,
+		 struct timeval *before, struct timeval *after)
+{
+	time_t sec       = 0;
+	suseconds_t usec = 0;
+
+	if (!out || !before || !after)
+		return;
+
+	sec = after->tv_sec - before->tv_sec;
+	if (after->tv_usec < before->tv_usec) {
+		sec -= 1;
+		usec = 1000000 + after->tv_usec - before->tv_usec;
+	}
+	else
+		usec = after->tv_usec - before->tv_usec;
+
+	out->tv_sec = sec;
+	out->tv_usec = usec;
+}
+
+static inline double timeval_to_sec (struct timeval *t)
+{
+	double sec = 0.0F;
+
+	sec += t->tv_sec;
+	sec += (double) 0.000001 * t->tv_usec;
+
+	return sec;
+}
+
+
+static inline double
+timegap_double (struct timeval *before, struct timeval *after)
+{
+	struct timeval lat = { 0, };
+
+	timeval_latency (&lat, before, after);
+
+	return timeval_to_sec (&lat);
+}
 
 #endif	/* _IMESS_SERVER_H_ */

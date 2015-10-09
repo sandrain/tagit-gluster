@@ -245,16 +245,14 @@ int ixsql_sql_query (ixsql_control_t *ctl, ixsql_query_t *query)
 
 	fs = ctl->gluster;
 
-        if (!cmd) {
-                cmd = dict_new ();
-                if (!cmd) {
-                        ret = -1;
-                        goto out;
-                }
+	cmd = dict_new ();
+	if (!cmd) {
+		ret = -1;
+		goto out;
+	}
 
-		ret = dict_set_str (cmd, "type", "query");
-                ret = dict_set_str (cmd, "sql", query->sql);
-        }
+	ret = dict_set_str (cmd, "type", "query");
+	ret = dict_set_str (cmd, "sql", query->sql);
 
 	if (ctl->active_clients <= 0) {
 		fprintf (ctl->fp_output, "no active clients set.\n");
@@ -282,6 +280,52 @@ int ixsql_sql_query (ixsql_control_t *ctl, ixsql_query_t *query)
                 goto out;
 
         gettimeofday (&after, NULL);
+
+	query->result = result;
+	timeval_latency (&query->latency, &before, &after);
+
+out:
+	if (cmd)
+		dict_destroy (cmd);
+
+	return ret;
+}
+
+int ixsql_exec (ixsql_control_t *ctl, ixsql_query_t *query)
+{
+        int ret               = 0;
+	glfs_t *fs            = NULL;
+        dict_t *cmd           = NULL;
+        dict_t *result        = NULL;
+        struct timeval before = { 0, };
+        struct timeval after  = { 0, };
+
+	fs = ctl->gluster;
+
+	cmd = dict_new ();
+	if (!cmd) {
+		ret = -1;
+		goto out;
+	}
+
+	ret  = dict_set_str (cmd, "type", "exec");
+	ret |= dict_set_str (cmd, "sql", query->sql);
+	ret |= dict_set_str (cmd, "operator", query->operator);
+	ret |= dict_set_str (cmd, "clients", "all");
+	if (ret) {
+		fprintf (stderr, "dict_set_str failed (%d)\n", ret);
+		goto out;
+	}
+
+	gettimeofday (&before, NULL);
+
+	ret = glfs_ipc (fs, IMESS_IPC_OP, cmd, &result);
+	if (ret) {
+		fprintf (stderr, "glfs_ipc failed (%d)\n", ret);
+		goto out;
+	}
+
+	gettimeofday (&after, NULL);
 
 	query->result = result;
 	timeval_latency (&query->latency, &before, &after);
