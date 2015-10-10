@@ -136,7 +136,11 @@ static inline int print_data (ixsql_query_t *query)
 	for (i = 0; i < count; i++) {
 		sprintf (keybuf, "%llu", _llu (i));
                 ret = dict_get_str (result, keybuf, &row);
+
+		/* put the '\n' if it doesn't have already */
 		fputs (row, control->fp_output);
+		if (row[strlen(row) -1] != '\n')
+			fputc('\n', control->fp_output);
 	}
 
 	return 0;
@@ -345,6 +349,7 @@ static struct option opts[] = {
 	{ .name = "help", .has_arg = 0, .flag = NULL, .val = 'h' },
 	{ .name = "latency", .has_arg = 0, .flag = NULL, .val = 'l' },
 	{ .name = "mute", .has_arg = 0, .flag = NULL, .val = 'm' },
+	{ .name = "null", .has_arg = 0, .flag = NULL, .val='z' },
 	{ .name = "num-clients", .has_arg = 1, .flag = NULL, .val = 'n' },
 	{ .name = "slice", .has_arg = 1, .flag = NULL, .val = 's' },
 	{ .name = "sql", .has_arg = 1, .flag = NULL, .val = 'q' },
@@ -359,14 +364,15 @@ static const char *usage_str =
 "\n"
 "options:\n"
 "  --benchmark, -b [sec]  benchmark mode for [sec], should be used with -q\n"
+"  --client, -c [N]       send query to a specific clients \n"
 "  --debug, -d            print log messages to stderr\n"
 "  --exec, -x [operator]  active execution for the result files\n"
 "  --help, -h             this help message\n"
-"  --sql, -q [sql query]  execute sql directly\n"
-"  --slice, -s [N]        fetch [N] result per a query (with -q option)\n"
 "  --latency, -l          show query latency (with -q option)\n"
 "  --mute, -m             mute output, useful for measuring the latency\n"
-"  --client, -c [N]       send query to a specific clients \n"
+"  --null, -z             do nothing but measure fs virtual mount time\n"
+"  --slice, -s [N]        fetch [N] result per a query (with -q option)\n"
+"  --sql, -q [sql query]  execute sql directly\n"
 "  --num-clients, -n [N]  number of clients to be used (for benchmark)\n"
 "  --sql-file, -f [file]  batch execute queries in [file]\n"
 "  --verbose, -v          show more information including error codes\n"
@@ -384,6 +390,7 @@ int main(int argc, char **argv)
         int ret               = 0;
 	int op                = 0;
 	int mute              = 0;
+	int null_ops          = 0;
 	int benchmark         = 0;
 	unsigned int duration = 0;
 	int show_latency      = 0;
@@ -399,7 +406,7 @@ int main(int argc, char **argv)
 	double elapsed_sec    = 0.0F;
 
 	while ((op = getopt_long (argc, argv,
-				  "b:c:df:hlmn:q:s:vx:",
+				  "b:c:df:hlmn:q:s:vx:z",
 				  opts, NULL)) != -1)
 	{
 		switch (op) {
@@ -436,6 +443,9 @@ int main(int argc, char **argv)
 			break;
 		case 'x':
 			operator = optarg;
+			break;
+		case 'z':
+			null_ops = 1;
 			break;
 		case 'h':
 		default:
@@ -481,6 +491,8 @@ int main(int argc, char **argv)
 	else
 		ret = glfs_set_logging (fs, "/dev/null", 7);
         ret = glfs_init (fs);
+	if (null_ops)
+		goto out;
 
 	n_clients = read_client_number (fs, argv[0]);
 
