@@ -54,7 +54,7 @@ static inline double timeval_to_sec (struct timeval *t)
 }
 
 #define IXSQL_QUIT		0x12345
-#define IXSQL_DEFAULT_SLICE	200
+#define IXSQL_DEFAULT_SLICE	10
 
 #ifndef _llu
 #define _llu(x)	((unsigned long long) (x))
