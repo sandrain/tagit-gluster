@@ -185,17 +185,39 @@ int ims_async_put_task (ims_async_t *ctx, ims_task_t *task);
  *   corresponding value will be overwritten.
  */
 
+#define IMS_IPC_TYPE_UNKNOWN	0
+#define	IMS_IPC_TYPE_EXEC	1
+#define	IMS_IPC_TYPE_FILTER	2
+#define	IMS_IPC_TYPE_EXTRACTOR	3
+
 int32_t ims_ipc_query (xlator_t *this,
 		       dict_t *xdata_in, dict_t *xdata_out, int *err);
 
-int32_t ims_ipc_exec (xlator_t *this,
-		      dict_t *xdata_in, dict_t *xdata_out, int *err);
+int32_t
+ims_ipc_active_exec (xlator_t *this, dict_t *xdata_in, dict_t *xdata_out,
+			int *err, int type);
 
-int32_t ims_ipc_filter (xlator_t *this,
-		        dict_t *xdata_in, dict_t *xdata_out, int *err);
+static inline int32_t
+ims_ipc_exec (xlator_t *this, dict_t *xdata_in, dict_t *xdata_out, int *err)
+{
+	return ims_ipc_active_exec (this, xdata_in, xdata_out, err,
+					IMS_IPC_TYPE_EXEC);
+}
 
-int32_t ims_ipc_extractor (xlator_t *this,
-		           dict_t *xdata_in, dict_t *xdata_out, int *err);
+static inline int32_t
+ims_ipc_filter (xlator_t *this, dict_t *xdata_in, dict_t *xdata_out, int *err)
+{
+	return ims_ipc_active_exec (this, xdata_in, xdata_out, err,
+					IMS_IPC_TYPE_FILTER);
+}
+
+static inline int32_t
+ims_ipc_extractor (xlator_t *this, dict_t *xdata_in, dict_t *xdata_out,
+			int *err)
+{
+	return ims_ipc_active_exec (this, xdata_in, xdata_out, err,
+					IMS_IPC_TYPE_EXTRACTOR);
+}
 
 /*
  * helpers
