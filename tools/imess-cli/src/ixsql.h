@@ -60,10 +60,19 @@ static inline double timeval_to_sec (struct timeval *t)
 #define _llu(x)	((unsigned long long) (x))
 #endif
 
+/*
+ * FIXME: this definition is duplicated (imess-server.h)
+ */
+#define IMS_IPC_TYPE_UNKNOWN	0
+#define	IMS_IPC_TYPE_EXEC	1
+#define	IMS_IPC_TYPE_FILTER	2
+#define	IMS_IPC_TYPE_EXTRACTOR	3
+
 struct _ixsql_query {
 	char           *sql;
 	dict_t         *result;
 	char           *operator;
+	int		type;
 	uint64_t        count;
 	struct timeval  latency;
 };

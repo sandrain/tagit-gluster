@@ -291,6 +291,10 @@ out:
 	return ret;
 }
 
+static char *ixsql_query_type_str[] = {
+	"unknown", "exec", "filter", "extractor", 0
+};
+
 int ixsql_exec (ixsql_control_t *ctl, ixsql_query_t *query)
 {
         int ret               = 0;
@@ -299,6 +303,7 @@ int ixsql_exec (ixsql_control_t *ctl, ixsql_query_t *query)
         dict_t *result        = NULL;
         struct timeval before = { 0, };
         struct timeval after  = { 0, };
+	char *typestr         = NULL;
 
 	fs = ctl->gluster;
 
@@ -308,7 +313,9 @@ int ixsql_exec (ixsql_control_t *ctl, ixsql_query_t *query)
 		goto out;
 	}
 
-	ret  = dict_set_str (cmd, "type", "exec");
+	typestr = ixsql_query_type_str[query->type];
+
+	ret  = dict_set_str (cmd, "type", typestr);
 	ret |= dict_set_str (cmd, "sql", query->sql);
 	ret |= dict_set_str (cmd, "operator", query->operator);
 	ret |= dict_set_str (cmd, "clients", "all");

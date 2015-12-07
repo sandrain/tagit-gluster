@@ -237,7 +237,7 @@ out:
         return ret;
 }
 
-static inline int process_exec (char *line)
+static inline int process_exec (char *line, int type)
 {
         int ret               = 0;
 	ixsql_query_t query   = { 0, };
@@ -253,12 +253,14 @@ static inline int process_exec (char *line)
 	control->slice_count = 0;
 	query.sql = line;
 	query.operator = operator;
+	query.type = type;
 
 	ret = ixsql_exec (control, &query);
 	if (ret)
 		goto out;
 
-	print_better_result (&query);
+	if (type != IMS_IPC_TYPE_EXTRACTOR)
+		print_better_result (&query);
 out:
 	if (query.result)
 		dict_destroy (query.result);
@@ -348,6 +350,7 @@ static struct option opts[] = {
 	{ .name = "debug", .has_arg = 0, .flag = NULL, .val = 'd' },
 	{ .name = "exec", .has_arg = 1, .flag = NULL, .val = 'x' },
 	{ .name = "help", .has_arg = 0, .flag = NULL, .val = 'h' },
+	{ .name = "index", .has_arg = 0, .flag = NULL, .val = 'i' },
 	{ .name = "latency", .has_arg = 0, .flag = NULL, .val = 'l' },
 	{ .name = "mute", .has_arg = 0, .flag = NULL, .val = 'm' },
 	{ .name = "null", .has_arg = 0, .flag = NULL, .val='z' },
@@ -369,6 +372,7 @@ static const char *usage_str =
 "  --debug, -d            print log messages to stderr\n"
 "  --exec, -x [operator]  active execution for the result files\n"
 "  --help, -h             this help message\n"
+"  --index, -i            index the execution output (use with --exec)\n"
 "  --latency, -l          show query latency (with -q option)\n"
 "  --mute, -m             mute output, useful for measuring the latency\n"
 "  --null, -z             do nothing but measure fs virtual mount time\n"
@@ -396,6 +400,7 @@ int main(int argc, char **argv)
 	unsigned int duration = 0;
 	int show_latency      = 0;
 	int direct            = 0;
+	int index	      = 0;
 	int n_clients         = 0;
 	int n_test_clients    = 0;
 	uint64_t slice_count  = IXSQL_DEFAULT_SLICE;
@@ -407,7 +412,7 @@ int main(int argc, char **argv)
 	double elapsed_sec    = 0.0F;
 
 	while ((op = getopt_long (argc, argv,
-				  "b:c:df:hlmn:q:s:vx:z",
+				  "b:c:df:hilmn:q:s:vx:z",
 				  opts, NULL)) != -1)
 	{
 		switch (op) {
@@ -447,6 +452,9 @@ int main(int argc, char **argv)
 			break;
 		case 'z':
 			null_ops = 1;
+			break;
+		case 'i':
+			index = 1;
 			break;
 		case 'h':
 		default:
@@ -554,8 +562,13 @@ int main(int argc, char **argv)
 
 		gettimeofday (&before, NULL);
 
-		if (operator)
-			process_exec (sql);
+		if (operator) {
+			int type = IMS_IPC_TYPE_EXEC;
+
+			if (index)
+				type = IMS_IPC_TYPE_EXTRACTOR;
+			process_exec (sql, type);
+		}
 		else if (sql_file)
 			count = process_batch (sql_file);
 		else
