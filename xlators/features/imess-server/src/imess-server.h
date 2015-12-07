@@ -223,6 +223,52 @@ ims_ipc_extractor (xlator_t *this, dict_t *xdata_in, dict_t *xdata_out,
  * helpers
  */
 
+/*
+ * xattr helpers
+ */
+
+struct _ims_xattr_filler {
+	int             count;
+	ims_xdb_attr_t *xattr;
+};
+
+typedef struct _ims_xattr_filler ims_xattr_filler_t;
+
+static inline int
+ims_find_setxattr_kv (dict_t *dict, char *k, data_t *v, void *tmp)
+{
+	int type                     = IMS_XDB_TYPE_INTEGER;
+	ims_xattr_filler_t *filler   = NULL;
+	char data_str[PATH_MAX]      = { 0, };
+	int64_t val	             = 0;
+
+	filler = tmp;
+
+	if (!XATTR_IS_IMESSXDB (k))
+		goto out;
+
+	memset (data_str, 0, sizeof(data_str));
+	memcpy (data_str, data_to_ptr (v), v->len);
+
+	val = strtoll (data_str, NULL, 0);
+	if (val == 0 && strcmp (data_str, "0"))
+		type = IMS_XDB_TYPE_STRING;
+
+	filler->xattr->name = k;
+	filler->xattr->type = type;
+	filler->count++;
+
+	filler->xattr->ival = 0;
+	filler->xattr->sval = NULL;
+
+	if (type == IMS_XDB_TYPE_INTEGER)
+		filler->xattr->ival = val;
+	else
+		filler->xattr->sval = gf_strdup (data_str);
+out:
+	return 0;
+}
+
 #include <sys/time.h>
 
 static inline void
@@ -267,5 +313,6 @@ timegap_double (struct timeval *before, struct timeval *after)
 
 	return timeval_to_sec (&lat);
 }
+
 
 #endif	/* _IMESS_SERVER_H_ */

@@ -249,8 +249,11 @@ ims_rmdir (call_frame_t *frame, xlator_t *this, loc_t *loc, int flags,
 
 /*
  * setxattr
+ *
+ * The max. length of the data value is currently set to be PATH_MAX (4096).
  */
 
+#if 0
 struct _xattr_filler {
 	int             count;
 	ims_xdb_attr_t *xattr;
@@ -292,6 +295,7 @@ find_setxattr_kv (dict_t *dict, char *k, data_t *v, void *tmp)
 out:
 	return 0;
 }
+#endif
 
 int32_t
 ims_setxattr_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
@@ -350,13 +354,14 @@ ims_setxattr (call_frame_t *frame, xlator_t *this,
 	int ret               = -1;
 	void *cookie          = NULL;
 	ims_xdb_attr_t xattr  = { 0, };
-	xattr_filler_t filler = { 0, };
+	ims_xattr_filler_t filler = { 0, };
 
 	filler.xattr = &xattr;
-	ret = dict_foreach (dict, find_setxattr_kv, &filler);
+	ret = dict_foreach (dict, ims_find_setxattr_kv, &filler);
 	if (ret) {
 		gf_log (this->name, GF_LOG_WARNING,
-			"ims_setxattr: find_xattr_kv failed (ret=%d)", ret);
+			"ims_setxattr: ims_find_xattr_kv failed (ret=%d)",
+			ret);
 		goto wind;
 	}
 
@@ -365,7 +370,7 @@ ims_setxattr (call_frame_t *frame, xlator_t *this,
 
 	if (filler.count != 1) {
 		gf_log (this->name, GF_LOG_WARNING,
-			"ims_setxattr: find_setxattr_kv counts %d xattrs",
+			"ims_setxattr: ims_find_setxattr_kv counts %d xattrs",
 			filler.count);
 	}
 

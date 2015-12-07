@@ -146,38 +146,94 @@ out:
 	return op_ret;
 }
 
+static int32_t
+extractor_put_xdb_task (xlator_t *this, loc_t *loc,
+			const char *path, dict_t *dict, int *err)
+{
+	int op_ret                = -1;
+	int op_errno              = 0;
+	ims_priv_t *priv          = NULL;
+	ims_xdb_t *xdb            = NULL;
+	ims_xdb_attr_t xattr      = { 0, };
+	ims_xattr_filler_t filler = { 0, };
+	ims_task_t task           = { {0,0}, };
+
+	priv = this->private;
+	xdb = priv->xdb;
+
+	filler.xattr = &xattr;
+	op_ret = dict_foreach (dict, ims_find_setxattr_kv, &filler);
+	if (op_ret) {
+		gf_log (this->name, GF_LOG_WARNING,
+			"extractor_put_xdb_task: ims_find_xattr_kv failed"
+			" (%d)", op_ret);
+		goto out;
+	}
+
+	if (filler.count != 1) {
+		gf_log (this->name, GF_LOG_WARNING,
+			"extractor_put_xdb_task: ims_find_setxattr_kv counts"
+			" %d xattrs", filler.count);
+		goto out;
+	}
+
+	xattr.gfid = uuid_utoa (loc->inode->gfid);
+
+	task.op = IMS_TASK_INSERT_XATTR;
+	task.attr = xattr;
+
+	op_ret = ims_async_put_task (priv->async_ctx, &task);
+	if (op_ret) {
+		gf_log (this->name, GF_LOG_WARNING,
+			"extractor_put_xdb_task: ims_async_put_task failed"
+			" (%d)", op_ret);
+	}
+
+out:
+	*err = op_errno;
+	return op_ret;
+}
+
 static inline int32_t
 extractor_setxattr (xlator_t *this, const char *path, char *line, int *err)
 {
 	int op_ret          = -1;
 	int op_errno        = 0;
 	int flags           = 0;
-	ims_priv_t *priv    = NULL;
-	ims_xdb_t *xdb      = NULL;
-	ims_xdb_file_t file = { 0, };
-	ims_xdb_attr_t attr = { 0, };
 	loc_t loc           = { 0, };
 	dict_t *xattr       = NULL;
-
-	priv = this->private;
-	xdb = priv->xdb;
-
-	file.path = path;
 
 	op_ret = parse_line_to_xattr (line, &xattr, &op_errno);
 	if (op_ret)
 		goto out;
 
+	/*
+	 * FIXME: syncop_XXX is not working here. plus, the client cannot set
+	 * it because the target files should be searched from here.
+	 *
+	 * so, probably, we need to use sys_lsetxattr directly, with converting
+	 * the path into the realpath as the posix xlator does.
+	 */
+
 	op_ret = syncop_setxattr (FIRST_CHILD (this),
 				  &loc, xattr, flags, NULL, NULL);
-
-	op_ret = ims_xdb_insert_xattr (xdb, &file, &attr, 1);
 	if (op_ret) {
 		gf_log (this->name, GF_LOG_WARNING,
-			"ims_ipcc_extractor: ims_xdb_insert_xattr failed "
-			"(db_ret = %d, %s).",
-			xdb->db_ret, ims_xdb_errstr (xdb->db_ret));
+			"extractor_setxattr: syncop_setxattr failed (%d)",
+			op_ret);
 		goto out;
+	}
+
+	/*
+	 * FIXME: here as well, we cannot use the gfid in the loc_t, which is
+	 * empty.
+	 */
+
+	op_ret = extractor_put_xdb_task (this, &loc, path, xattr, err);
+	if (op_ret) {
+		gf_log (this->name, GF_LOG_WARNING,
+			"extractor_setxattr: ims_put_xdb_task failed (%d)",
+			op_ret);
 	}
 
 out:
