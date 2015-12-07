@@ -259,7 +259,8 @@ static inline int process_exec (char *line, int type)
 	if (ret)
 		goto out;
 
-	print_better_result (&query);
+	if (type != IMS_IPC_TYPE_EXTRACTOR)
+		print_better_result (&query);
 out:
 	if (query.result)
 		dict_destroy (query.result);

@@ -18,6 +18,7 @@
 #include "xlator.h"
 #include "logging.h"
 #include "syncop.h"
+#include "syscall.h"
 #include "run.h"
 
 #include "imess-server.h"
@@ -109,7 +110,6 @@ ipc_extractor_handle_xattr(xlator_t *this, ims_priv_t *priv,
 
 	return 0;
 }
-#endif
 
 static inline int32_t
 parse_line_to_xattr (char *line, dict_t **xattr, int *err)
@@ -145,7 +145,55 @@ out:
 	*err = op_err;
 	return op_ret;
 }
+#endif
 
+static inline int32_t
+parse_line_to_xattr (char *line, ims_xdb_attr_t *xattr, int *err)
+{
+	int op_ret = -1;
+	int op_err = 0;
+	int type   = IMS_XDB_TYPE_INTEGER;
+	int64_t ival = 0;
+	char *key  = NULL;
+	char *val  = NULL;
+	char data_str[PATH_MAX] = { 0, };
+
+	key = line;
+	val = strchr (line, '=');
+	if (val == NULL) {
+		op_err = EINVAL;
+		goto out;
+	}
+
+	*val++ = '\0';
+	if (!val) {
+		op_err = EINVAL;
+		goto out;
+	}
+
+	sprintf (data_str, "%s", val);
+
+	ival = strtoll (data_str, NULL, 0);
+	if (ival == 0 && strcmp (data_str, "0"))
+		type = IMS_XDB_TYPE_STRING;
+
+	xattr->name = key;
+	xattr->type = type;
+	xattr->ival = 0;
+	xattr->sval = NULL;
+
+	if (type == IMS_XDB_TYPE_INTEGER)
+		xattr->ival = ival;
+	else
+		xattr->sval = gf_strdup (data_str);
+
+	op_ret = 0;
+out:
+	*err = op_err;
+	return op_ret;
+}
+
+#if 0
 static int32_t
 extractor_put_xdb_task (xlator_t *this, loc_t *loc,
 			const char *path, dict_t *dict, int *err)
@@ -193,15 +241,57 @@ out:
 	*err = op_errno;
 	return op_ret;
 }
+#endif
+
+/*
+ * assume that only a single xattr is passed.
+ */
+static int
+ims_sys_setxattr (ims_priv_t *priv, const char *path, ims_xdb_attr_t *xattr)
+{
+	int op_ret = -1;
+	char value[PATH_MAX] = { 0, };
+	size_t size = -1;
+	ssize_t len = 0;
+
+	if (xattr->type == IMS_XDB_TYPE_INTEGER)
+		sprintf (value, "%ld", xattr->ival);
+	else if (xattr->type == IMS_XDB_TYPE_STRING)
+		sprintf (value, "%s", xattr->sval);
+	else
+		goto out;
+
+	size = strlen (value) - 1;	/* not counting the last '\0' */
+
+	op_ret = sys_lsetxattr (path, xattr->name, value, size,
+				XATTR_CREATE);
+	if (op_ret == -1 && errno == EEXIST) {
+		/* if already exists, replace it with a new value */
+		op_ret = sys_lsetxattr (path, xattr->name, value, size,
+					XATTR_REPLACE);
+		if (op_ret)
+			goto out;
+	}
+
+	/*
+	 * now read the gfid from the file.
+	 */
+	memset (value, 0, sizeof(value));
+	len = sys_lgetxattr (path, "trusted.gfid", (void *) value, PATH_MAX);
+
+	xattr->gfid = uuid_utoa ((unsigned char *) value);
+out:
+	return op_ret;
+}
 
 static inline int32_t
 extractor_setxattr (xlator_t *this, const char *path, char *line, int *err)
 {
-	int op_ret          = -1;
-	int op_errno        = 0;
-	int flags           = 0;
-	loc_t loc           = { 0, };
-	dict_t *xattr       = NULL;
+	int op_ret             = -1;
+	int op_errno           = 0;
+	ims_priv_t *priv       = NULL;
+	ims_xdb_attr_t xattr   = { 0, };
+	ims_task_t task        = { {0,0}, };
 
 	op_ret = parse_line_to_xattr (line, &xattr, &op_errno);
 	if (op_ret)
@@ -213,27 +303,31 @@ extractor_setxattr (xlator_t *this, const char *path, char *line, int *err)
 	 *
 	 * so, probably, we need to use sys_lsetxattr directly, with converting
 	 * the path into the realpath as the posix xlator does.
+	 * Also, we can directly read the 'trusted.gfid' from the file.
 	 */
 
-	op_ret = syncop_setxattr (FIRST_CHILD (this),
-				  &loc, xattr, flags, NULL, NULL);
+	priv = this->private;
+
+	op_ret = ims_sys_setxattr (priv, path, &xattr);
 	if (op_ret) {
 		gf_log (this->name, GF_LOG_WARNING,
-			"extractor_setxattr: syncop_setxattr failed (%d)",
+			"extractor_setxattr: ims_sys_setxattr failed (%d)",
 			op_ret);
+		op_errno = errno;
 		goto out;
 	}
 
 	/*
-	 * FIXME: here as well, we cannot use the gfid in the loc_t, which is
-	 * empty.
+	 * update the database. all required fields in xattr should be set here.
 	 */
+	task.op = IMS_TASK_INSERT_XATTR;
+	task.attr = xattr;
 
-	op_ret = extractor_put_xdb_task (this, &loc, path, xattr, err);
+	op_ret = ims_async_put_task (priv->async_ctx, &task);
 	if (op_ret) {
 		gf_log (this->name, GF_LOG_WARNING,
-			"extractor_setxattr: ims_put_xdb_task failed (%d)",
-			op_ret);
+			"extractor_put_xdb_task: ims_async_put_task failed"
+			" (%d)", op_ret);
 	}
 
 out:

@@ -310,7 +310,7 @@ ims_setxattr_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 		goto out;
 
 	priv = this->private;
-		xdb = priv->xdb;
+	xdb = priv->xdb;
 	xattr = cookie;
 
 	if (priv->async_update) {
