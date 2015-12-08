@@ -165,12 +165,11 @@ static inline int64_t print_better_result (ixsql_query_t *query)
 					    print_metadata_fn, query);
 
 	ret = print_data (query);
-	ret = 0;
 err:
-	if (ret) {
-		//fprintf (stderr, "cannot parse the output (%d)\n", ret);
+	if (ret)
 		ret = -1;
-	}
+	else
+		ret = query->count;
 
 	return ret;
 }

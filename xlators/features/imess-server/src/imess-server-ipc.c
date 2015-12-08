@@ -100,53 +100,6 @@ close:
  * execute the command with each file and return any output via xdata.
  */
 
-#if 0
-static inline int32_t
-ipc_extractor_handle_xattr(xlator_t *this, ims_priv_t *priv,
-				const char *path, dict_t *xattrs)
-{
-	/* can we directly call the ims_setxattr here? or need to call
-	 * syncop_setxattr ? */
-
-	return 0;
-}
-
-static inline int32_t
-parse_line_to_xattr (char *line, dict_t **xattr, int *err)
-{
-	int op_ret = -1;
-	int op_err = 0;
-	char *key  = NULL;
-	char *val  = NULL;
-	dict_t *xa = NULL;
-
-	key = line;
-	val = strchr (line, '=');
-	if (val == NULL) {
-		op_err = EINVAL;
-		goto out;
-	}
-
-	*val++ = '\0';
-	if (!val) {
-		op_err = EINVAL;
-		goto out;
-	}
-
-	xa = dict_for_key_value (key, val, strlen (val));
-	if (!xa) {
-		op_err = ENOMEM;
-		goto out;
-	}
-
-	*xattr = xa;
-	op_ret = 0;
-out:
-	*err = op_err;
-	return op_ret;
-}
-#endif
-
 static inline int32_t
 parse_line_to_xattr (char *line, ims_xdb_attr_t *xattr, int *err)
 {
@@ -185,63 +138,13 @@ parse_line_to_xattr (char *line, ims_xdb_attr_t *xattr, int *err)
 	if (type == IMS_XDB_TYPE_INTEGER)
 		xattr->ival = ival;
 	else
-		xattr->sval = gf_strdup (data_str);
+		xattr->sval = val;
 
 	op_ret = 0;
 out:
 	*err = op_err;
 	return op_ret;
 }
-
-#if 0
-static int32_t
-extractor_put_xdb_task (xlator_t *this, loc_t *loc,
-			const char *path, dict_t *dict, int *err)
-{
-	int op_ret                = -1;
-	int op_errno              = 0;
-	ims_priv_t *priv          = NULL;
-	ims_xdb_t *xdb            = NULL;
-	ims_xdb_attr_t xattr      = { 0, };
-	ims_xattr_filler_t filler = { 0, };
-	ims_task_t task           = { {0,0}, };
-
-	priv = this->private;
-	xdb = priv->xdb;
-
-	filler.xattr = &xattr;
-	op_ret = dict_foreach (dict, ims_find_setxattr_kv, &filler);
-	if (op_ret) {
-		gf_log (this->name, GF_LOG_WARNING,
-			"extractor_put_xdb_task: ims_find_xattr_kv failed"
-			" (%d)", op_ret);
-		goto out;
-	}
-
-	if (filler.count != 1) {
-		gf_log (this->name, GF_LOG_WARNING,
-			"extractor_put_xdb_task: ims_find_setxattr_kv counts"
-			" %d xattrs", filler.count);
-		goto out;
-	}
-
-	xattr.gfid = uuid_utoa (loc->inode->gfid);
-
-	task.op = IMS_TASK_INSERT_XATTR;
-	task.attr = xattr;
-
-	op_ret = ims_async_put_task (priv->async_ctx, &task);
-	if (op_ret) {
-		gf_log (this->name, GF_LOG_WARNING,
-			"extractor_put_xdb_task: ims_async_put_task failed"
-			" (%d)", op_ret);
-	}
-
-out:
-	*err = op_errno;
-	return op_ret;
-}
-#endif
 
 /*
  * assume that only a single xattr is passed.
@@ -292,6 +195,8 @@ extractor_setxattr (xlator_t *this, const char *path, char *line, int *err)
 	ims_priv_t *priv       = NULL;
 	ims_xdb_attr_t xattr   = { 0, };
 	ims_task_t task        = { {0,0}, };
+
+	memset (&xattr, 0, sizeof(xattr));
 
 	op_ret = parse_line_to_xattr (line, &xattr, &op_errno);
 	if (op_ret)
