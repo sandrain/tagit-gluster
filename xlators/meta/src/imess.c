@@ -12,10 +12,6 @@
 
 static struct meta_dirent imess_dir_dirents[] = {
 	DOT_DOTDOT,
-	{ .name = "debug",
-	  .type = IA_IFDIR,
-	  .hook = meta_imess_debug_dir_hook,
-	},
 	{ .name = "views",
 	  .type = IA_IFDIR,
 	  .hook = meta_imess_views_dir_hook,
@@ -23,10 +19,6 @@ static struct meta_dirent imess_dir_dirents[] = {
 	{ .name = "tags",
 	  .type = IA_IFDIR,
 	  .hook = meta_imess_tags_dir_hook,
-	},
-	{ .name = "create_view",
-	  .type = IA_IFREG,
-	  .hook = meta_imess_create_view_hook,
 	},
 	{ .name = NULL }
 };

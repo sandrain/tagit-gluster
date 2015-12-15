@@ -304,6 +304,30 @@ out:
 	return count;
 }
 
+static int process_virtual_view (char *sql, char *name)
+{
+	int ret = 0;
+
+	/* FIXME: make the comparison more intelligent (dealing with spaces) */
+	if (strncasecmp (sql, "select path from",
+			 strlen ("select path from")))
+	{
+		fprintf (stderr, "the query should fetch 'path' for "
+				 "creating a view");
+		return -1;
+	}
+
+	ret = ixsql_create_virtual_view (control, sql, name);
+	if (ret) {
+		fprintf (control->fp_output,
+			 "Failed to created a view (%d)\n", ret);
+	}
+
+	/* do we need to something extra here? */
+
+	return ret;
+}
+
 static void ixsql_shell(void)
 {
         int ret = 0;
@@ -358,6 +382,7 @@ static struct option opts[] = {
 	{ .name = "sql", .has_arg = 1, .flag = NULL, .val = 'q' },
 	{ .name = "sql-file", .has_arg = 1, .flag = NULL, .val ='f' },
 	{ .name = "verbose", .has_arg = 1, .flag = NULL, .val = 'v' },
+	{ .name = "create-view", .has_arg = 1, .flag = NULL, .val = 'V'},
 	{ 0, 0, 0, 0 },
 };
 
@@ -366,20 +391,21 @@ static const char *usage_str =
 "usage: xsql [options..] <volume id> <volume server>\n"
 "\n"
 "options:\n"
-"  --benchmark, -b [sec]  benchmark mode for [sec], should be used with -q\n"
-"  --client, -c [N]       send query to a specific clients \n"
-"  --debug, -d            print log messages to stderr\n"
-"  --exec, -x [operator]  active execution for the result files\n"
-"  --help, -h             this help message\n"
-"  --index, -i            index the execution output (use with --exec)\n"
-"  --latency, -l          show query latency (with -q option)\n"
-"  --mute, -m             mute output, useful for measuring the latency\n"
-"  --null, -z             do nothing but measure fs virtual mount time\n"
-"  --slice, -s [N]        fetch [N] result per a query (with -q option)\n"
-"  --sql, -q [sql query]  execute sql directly\n"
-"  --num-clients, -n [N]  number of clients to be used (for benchmark)\n"
-"  --sql-file, -f [file]  batch execute queries in [file]\n"
-"  --verbose, -v          show more information including error codes\n"
+"  --benchmark, -b [sec]     benchmark mode for [sec], should be used with -q\n"
+"  --client, -c [N]          send query to a specific clients \n"
+"  --debug, -d               print log messages to stderr\n"
+"  --exec, -x [operator]     active execution for the result files\n"
+"  --help, -h                this help message\n"
+"  --index, -i               index the execution output (use with --exec)\n"
+"  --latency, -l             show query latency (with -q option)\n"
+"  --mute, -m                mute output, useful for measuring the latency\n"
+"  --null, -z                do nothing but measure fs virtual mount time\n"
+"  --slice, -s [N]           fetch [N] result per a query (with -q option)\n"
+"  --sql, -q [sql query]     execute sql directly\n"
+"  --num-clients, -n [N]     number of clients to be used (for benchmark)\n"
+"  --sql-file, -f [file]     batch execute queries in [file]\n"
+"  --verbose, -v             show more information including error codes\n"
+"  --create-view, -V [name]  create a virtual view for a query\n"
 "\n\n";
 
 static void print_usage (void)
@@ -396,6 +422,8 @@ int main(int argc, char **argv)
 	int mute              = 0;
 	int null_ops          = 0;
 	int benchmark         = 0;
+	int view              = 0;
+	char *view_name       = NULL;
 	unsigned int duration = 0;
 	int show_latency      = 0;
 	int direct            = 0;
@@ -411,7 +439,7 @@ int main(int argc, char **argv)
 	double elapsed_sec    = 0.0F;
 
 	while ((op = getopt_long (argc, argv,
-				  "b:c:df:hilmn:q:s:vx:z",
+				  "b:c:df:hilmn:q:s:vV:x:z",
 				  opts, NULL)) != -1)
 	{
 		switch (op) {
@@ -445,6 +473,10 @@ int main(int argc, char **argv)
 			break;
 		case 's':
 			slice_count = (uint64_t ) strtoul (optarg, NULL, 0);
+			break;
+		case 'V':
+			view = 1;
+			view_name = strdup (optarg);
 			break;
 		case 'x':
 			operator = optarg;
@@ -553,10 +585,13 @@ int main(int argc, char **argv)
 		gettimeofday (&after, NULL);
 		timeval_latency (&latency, &before, &after);
 		elapsed_sec = timeval_to_sec (&latency);
-
-		goto out;
 	}
 	else if (direct) {
+		if (view) {
+			process_virtual_view (sql, view_name);
+			goto out_nolatency;
+		}
+
 		count = 1;
 
 		gettimeofday (&before, NULL);
@@ -588,6 +623,7 @@ out:
 			 _llu (count),
 			 elapsed_sec, 1.0 * count / elapsed_sec);
 
+out_nolatency:
         glfs_fini (fs);
 
 	if (control)
