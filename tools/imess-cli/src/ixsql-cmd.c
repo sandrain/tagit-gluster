@@ -344,6 +344,42 @@ out:
 	return ret;
 }
 
+int ixsql_create_virtual_view (ixsql_control_t *ctl, char *sql, char *name)
+{
+	int ret = 0;
+	glfs_t *fs = NULL;
+	dict_t *cmd = NULL;
+	dict_t *result = NULL;
+
+	fs = ctl->gluster;
+
+	cmd = dict_new ();
+	if (!cmd) {
+		ret = -1;
+		goto out;
+	}
+
+	ret  = dict_set_str (cmd, "type", "meta:create-view");
+	ret |= dict_set_str (cmd, "sql", sql);
+	ret |= dict_set_str (cmd, "name", name);
+	if (ret) {
+		fprintf (stderr, "dict_set_str failed (%d)\n", ret);
+		goto out;
+	}
+
+	ret = glfs_ipc (fs, IMESS_IPC_OP, cmd, &result);
+	if (ret) {
+		fprintf (stderr, "glfs_ipc failed (%d)\n", ret);
+		goto out;
+	}
+
+out:
+	if (cmd)
+		dict_destroy (cmd);
+
+	return ret;
+}
+
 int ixsql_control_cmd (ixsql_control_t *control, const char *text)
 {
         int     count = 0;

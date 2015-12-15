@@ -187,6 +187,91 @@ meta_fsyncdir (call_frame_t *frame, xlator_t *this, fd_t *fd, int32_t flags,
         return 0;
 }
 
+#ifdef HAVE_IMESS
+
+int32_t
+meta_imess_create_view (xlator_t *this, dict_t *xdata)
+{
+	int op_ret   = -1;
+	int op_errno = 0;
+	char *name   = NULL;
+	char *sql    = NULL;
+
+	op_ret = dict_get_str (xdata, "name", &name);
+	if (op_ret) {
+		gf_log (this->name, GF_LOG_WARNING,
+			"meta_imess_create_view: cannot fetch view name");
+		op_errno = EINVAL;
+		goto out;
+	}
+
+	op_ret = dict_get_str (xdata, "sql", &sql);
+	if (op_ret) {
+		gf_log (this->name, GF_LOG_WARNING,
+			"meta_imess_create_view: cannot fetch sql query");
+		op_errno = EINVAL;
+		goto out;
+	}
+
+	op_ret = 0;
+out:
+	return op_ret;
+}
+
+int32_t
+meta_imess_remove_view (xlator_t *this, dict_t *xdata)
+{
+	return 0;
+}
+
+int32_t
+meta_ipc_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
+	      int32_t op_ret, int32_t op_errno, dict_t *xdata)
+{
+	STACK_UNWIND_STRICT (ipc, frame, op_ret, op_errno, xdata);
+
+	return 0;
+}
+
+int32_t
+meta_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata)
+{
+	int op_ret   = -1;
+	int op_errno = 0;
+	char *type   = NULL;
+
+	if (op != IMESS_IPC_OP)
+		goto wind;
+
+	op_ret = dict_get_str (xdata, "type", &type);
+	if (op_ret) {
+		gf_log (this->name, GF_LOG_WARNING,
+			"meta_ipc: IPC request without a type specification");
+		op_errno = EINVAL;
+		goto out;
+	}
+
+	if (!strncmp (type, "meta:create-view", strlen ("meta:create-view")))
+		op_ret = meta_imess_create_view (this, xdata);
+	else if (!strncmp (type, "meta:remove-view",
+			   strlen ("meta:remove-view")))
+		op_ret = meta_imess_remove_view (this, xdata);
+	else
+		goto wind;
+
+out:
+	STACK_UNWIND_STRICT (ipc, frame, op_ret, op_errno, NULL);
+	return 0;
+
+wind:
+	STACK_WIND (frame, meta_ipc_cbk,
+		    FIRST_CHILD (this), FIRST_CHILD (this)->fops->ipc,
+		    op, xdata);
+	return 0;
+}
+
+#endif
+
 int
 meta_forget (xlator_t *this, inode_t *inode)
 {
@@ -267,7 +352,8 @@ struct xlator_fops fops = {
 	.truncate  = meta_truncate,
 	.ftruncate = meta_ftruncate,
         .fsync     = meta_fsync,
-        .fsyncdir  = meta_fsyncdir
+        .fsyncdir  = meta_fsyncdir,
+	.ipc       = meta_ipc,
 };
 
 

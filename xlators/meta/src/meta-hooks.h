@@ -52,16 +52,6 @@ DECLARE_HOOK(analyzethis_self);
 DECLARE_HOOK(imess_dir);
 DECLARE_HOOK(imess_views_dir);
 DECLARE_HOOK(imess_tags_dir);
-DECLARE_HOOK(imess_create_view);
-DECLARE_HOOK(imess_debug_dir);
-DECLARE_HOOK(imess_debug_all_dir);
-DECLARE_HOOK(imess_debug_sql_dir);
-DECLARE_HOOK(imess_sql_query);
-DECLARE_HOOK(imess_sql_result);
-DECLARE_HOOK(imess_index_dir);
-DECLARE_HOOK(imess_xfile);
-DECLARE_HOOK(imess_xname);
-DECLARE_HOOK(imess_xdata);
 #endif
 
 #endif

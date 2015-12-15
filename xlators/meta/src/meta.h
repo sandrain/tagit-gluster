@@ -122,4 +122,5 @@ int meta_file_fill (xlator_t *this, fd_t *fd);
 int meta_dir_fill (xlator_t *this, fd_t *fd);
 
 int fixed_dirents_len (struct meta_dirent *dirents);
+
 #endif /* __META_H__ */

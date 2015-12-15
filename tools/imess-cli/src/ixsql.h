@@ -98,6 +98,8 @@ int ixsql_sql_query (ixsql_control_t *ctl, ixsql_query_t *query);
 
 int ixsql_exec (ixsql_control_t *ctl, ixsql_query_t *query);
 
+int ixsql_create_virtual_view (ixsql_control_t *ctl, char *sql, char *name);
+
 int ixsql_control_cmd (ixsql_control_t *control, const char *line);
 
 #endif	/* _IXSQL_H_ */
