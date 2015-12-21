@@ -12,6 +12,9 @@
 #include "config.h"
 #endif
 
+#include <stdio.h>
+#include <string.h>
+#include <stdint.h>
 #include <pthread.h>
 
 #include "glusterfs.h"
@@ -237,10 +240,12 @@ typedef struct _ims_xattr_filler ims_xattr_filler_t;
 static inline int
 ims_find_setxattr_kv (dict_t *dict, char *k, data_t *v, void *tmp)
 {
-	int type                     = IMS_XDB_TYPE_INTEGER;
+	int ret                      = 0;
+	int type                     = 0;
 	ims_xattr_filler_t *filler   = NULL;
 	char data_str[PATH_MAX]      = { 0, };
-	int64_t val	             = 0;
+	int64_t ival	             = 0;
+	double rval                  = .0f;
 
 	filler = tmp;
 
@@ -250,21 +255,45 @@ ims_find_setxattr_kv (dict_t *dict, char *k, data_t *v, void *tmp)
 	memset (data_str, 0, sizeof(data_str));
 	memcpy (data_str, data_to_ptr (v), v->len);
 
-	val = strtoll (data_str, NULL, 0);
-	if (val == 0 && strcmp (data_str, "0"))
+	if (strchr (data_str, '.'))
+		goto try_real;
+
+	ret = sscanf (data_str, "%ld", &ival);
+	if (ret == 1) {
+		type = IMS_XDB_TYPE_INTEGER;
+		goto done;
+	}
+
+try_real:
+	ret = sscanf (data_str, "%lf", &rval);
+	if (ret == 1)
+		type = IMS_XDB_TYPE_REAL;
+	else
 		type = IMS_XDB_TYPE_STRING;
 
+done:
 	filler->xattr->name = k;
 	filler->xattr->type = type;
 	filler->count++;
 
 	filler->xattr->ival = 0;
+	filler->xattr->rval = .0f;
 	filler->xattr->sval = NULL;
 
-	if (type == IMS_XDB_TYPE_INTEGER)
-		filler->xattr->ival = val;
-	else
+	switch (type) {
+	case IMS_XDB_TYPE_INTEGER:
+		filler->xattr->ival = ival;
+		break;
+	case IMS_XDB_TYPE_REAL:
+		filler->xattr->rval = rval;
+		break;
+	case IMS_XDB_TYPE_STRING:
 		filler->xattr->sval = gf_strdup (data_str);
+		break;
+	default:
+		break;
+	}
+
 out:
 	return 0;
 }

@@ -62,6 +62,7 @@ create table xdb_xdata (
 	gid	integer not null references xdb_xgfid (gid),
 	nid	integer not null references xdb_xname (nid),
 	ival	integer,
+	rval	real,
 	sval	text,
 
 	unique (gid, nid),
@@ -69,6 +70,7 @@ create table xdb_xdata (
 );
 
 create index ix_xdb_xdata_ival on xdb_xdata (nid, ival);
+create index ix_xdb_xdata_rval on xdb_xdata (nid, rval);
 create index ix_xdb_xdata_sval on xdb_xdata (nid, sval);
 
 -- this is slow, leave the stale data and take care of them when we mount.

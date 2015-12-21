@@ -103,12 +103,13 @@ close:
 static inline int32_t
 parse_line_to_xattr (char *line, ims_xdb_attr_t *xattr, int *err)
 {
-	int op_ret = -1;
-	int op_err = 0;
-	int type   = IMS_XDB_TYPE_INTEGER;
-	int64_t ival = 0;
-	char *key  = NULL;
-	char *val  = NULL;
+	int op_ret              = -1;
+	int op_err              = 0;
+	int type                = 0;
+	int64_t ival            = 0;
+	double rval             = .0f;
+	char *key               = NULL;
+	char *val               = NULL;
 	char data_str[PATH_MAX] = { 0, };
 
 	key = line;
@@ -126,19 +127,43 @@ parse_line_to_xattr (char *line, ims_xdb_attr_t *xattr, int *err)
 
 	sprintf (data_str, "%s", val);
 
-	ival = strtoll (data_str, NULL, 0);
-	if (ival == 0 && strcmp (data_str, "0"))
+	if (strchr (data_str, '.'))
+		goto try_real;
+
+	op_ret = sscanf (data_str, "%ld", &ival);
+	if (op_ret == 1) {
+		type = IMS_XDB_TYPE_INTEGER;
+		goto done;
+	}
+
+try_real:
+	op_ret = sscanf (data_str, "%lf", &rval);
+	if (op_ret == 1)
+		type = IMS_XDB_TYPE_REAL;
+	else
 		type = IMS_XDB_TYPE_STRING;
 
+done:
 	xattr->name = key;
 	xattr->type = type;
 	xattr->ival = 0;
+	xattr->rval = .0f;
 	xattr->sval = NULL;
 
-	if (type == IMS_XDB_TYPE_INTEGER)
+
+	switch (type) {
+	case IMS_XDB_TYPE_INTEGER:
 		xattr->ival = ival;
-	else
-		xattr->sval = val;
+		break;
+	case IMS_XDB_TYPE_REAL:
+		xattr->rval = rval;
+		break;
+	case IMS_XDB_TYPE_STRING:
+		xattr->sval = gf_strdup (data_str);
+		break;
+	default:
+		break;
+	}
 
 	op_ret = 0;
 out:
@@ -159,6 +184,8 @@ ims_sys_setxattr (ims_priv_t *priv, const char *path, ims_xdb_attr_t *xattr)
 
 	if (xattr->type == IMS_XDB_TYPE_INTEGER)
 		sprintf (value, "%ld", xattr->ival);
+	else if (xattr->type == IMS_XDB_TYPE_REAL)
+		sprintf (value, "%lf", xattr->rval);
 	else if (xattr->type == IMS_XDB_TYPE_STRING)
 		sprintf (value, "%s", xattr->sval);
 	else
@@ -216,8 +243,8 @@ extractor_setxattr (xlator_t *this, const char *path, char *line, int *err)
 	op_ret = ims_sys_setxattr (priv, path, &xattr);
 	if (op_ret) {
 		gf_log (this->name, GF_LOG_WARNING,
-			"extractor_setxattr: ims_sys_setxattr failed (%d)",
-			op_ret);
+			"extractor_setxattr: ims_sys_setxattr failed (%d, %d)",
+			op_ret, errno);
 		op_errno = errno;
 		goto out;
 	}
