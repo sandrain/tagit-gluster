@@ -88,20 +88,21 @@ static const char *xdb_sqls[XDB_N_SQLS] = {
 		"?,substr(?,?))\n",
 
 	/* [6] INSERT_STAT */
-	"insert into xdb_xdata (gid, nid, ival, sval)\n"
-		"select ? as gid, 1 as nid, ? as ival, null as sval\n"
-		"union select ?,2,?,null\n"
-		"union select ?,3,?,null\n"
-		"union select ?,4,?,null\n"
-		"union select ?,5,?,null\n"
-		"union select ?,6,?,null\n"
-		"union select ?,7,?,null\n"
-		"union select ?,8,?,null\n"
-		"union select ?,9,?,null\n"
-		"union select ?,10,?,null\n"
-		"union select ?,11,?,null\n"
-		"union select ?,12,?,null\n"
-		"union select ?,13,?,null\n",
+	"insert into xdb_xdata (gid, nid, ival, rval, sval)\n"
+		"select ? as gid, 1 as nid, ? as ival,\n"
+		"null as rval, null as sval\n"
+		"union select ?,2,?,null,null\n"
+		"union select ?,3,?,null,null\n"
+		"union select ?,4,?,null,null\n"
+		"union select ?,5,?,null,null\n"
+		"union select ?,6,?,null,null\n"
+		"union select ?,7,?,null,null\n"
+		"union select ?,8,?,null,null\n"
+		"union select ?,9,?,null,null\n"
+		"union select ?,10,?,null,null\n"
+		"union select ?,11,?,null,null\n"
+		"union select ?,12,?,null,null\n"
+		"union select ?,13,?,null,null\n",
 
 	/* [7] UPDATE_STAT (ival, gid, nid) */
 	"update xdb_xdata set ival=? where gid=? and nid=?",
@@ -122,10 +123,11 @@ static const char *xdb_sqls[XDB_N_SQLS] = {
 	/* [12] INSERT_XNAME (name) */
 	"insert or ignore into xdb_xname (name) values (?)\n",
 
-	/* [13] INSERT_XDATA (gfid, name, ival, sval) */
-	"insert or replace into xdb_xdata (gid, nid, ival, sval) values\n"
+	/* [13] INSERT_XDATA (gfid, name, ival, rval, sval) */
+	"insert or replace into xdb_xdata (gid, nid, ival, rval, sval)\n"
+		"values\n"
 		"((select gid from xdb_xgfid where gfid=?),\n"
-		"(select nid from xdb_xname where name=?),?,?)\n",
+		"(select nid from xdb_xname where name=?),?,?,?)\n",
 
 	/******************************/
 
@@ -751,6 +753,7 @@ int ims_xdb_setxattr (ims_xdb_t *self, ims_xdb_attr_t *xattr)
 	__valptr (xattr->name, out);
 
 	if (xattr->type != IMS_XDB_TYPE_INTEGER &&
+	    xattr->type != IMS_XDB_TYPE_REAL &&
 	    xattr->type != IMS_XDB_TYPE_STRING)
 		return -1;
 
@@ -790,10 +793,17 @@ int ims_xdb_setxattr (ims_xdb_t *self, ims_xdb_attr_t *xattr)
 	if (xattr->type == IMS_XDB_TYPE_INTEGER) {
 		db_ret |= sqlite3_bind_int64 (stmt, 3, xattr->ival);
 		db_ret |= sqlite3_bind_null (stmt, 4);
+		db_ret |= sqlite3_bind_null (stmt, 5);
+	}
+	else if (xattr->type == IMS_XDB_TYPE_REAL) {
+		db_ret |= sqlite3_bind_null (stmt, 3);
+		db_ret |= sqlite3_bind_double (stmt, 4, xattr->rval);
+		db_ret |= sqlite3_bind_null (stmt, 5);
 	}
 	else if (xattr->type == IMS_XDB_TYPE_STRING) {
 		db_ret |= sqlite3_bind_null (stmt, 3);
-		db_ret |= sqlite3_bind_text (stmt, 4, xattr->sval,
+		db_ret |= sqlite3_bind_null (stmt, 4);
+		db_ret |= sqlite3_bind_text (stmt, 5, xattr->sval,
 					     -1, SQLITE_STATIC);
 	}
 	else {

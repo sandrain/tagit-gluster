@@ -25,6 +25,7 @@
 enum {
         IMS_XDB_TYPE_NONE       = 0,
         IMS_XDB_TYPE_INTEGER,
+	IMS_XDB_TYPE_REAL,
         IMS_XDB_TYPE_STRING,
 };
 
@@ -83,6 +84,7 @@ struct _ims_xdb_attr {
         const char *name;	/* attribute name, for stat(2) use
                                    IMS_XDB_ST_xxx */
         uint64_t    ival;	/* parsed integer value */
+	double      rval;	/* parsed double value */
         const char *sval;	/* string value */
 };
 
