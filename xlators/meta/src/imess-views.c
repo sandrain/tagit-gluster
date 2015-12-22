@@ -57,8 +57,81 @@ meta_imess_view_link_hook (call_frame_t *frame, xlator_t *this, loc_t *loc,
  * individual view dir
  */
 
+static int
+imess_view_sql_file_fill (xlator_t *this, inode_t *file, strfd_t *strfd)
+{
+	int ret      = 0;
+	char *sql    = NULL;
+	dict_t *data = NULL;
+
+	data = meta_ctx_get (file, this);
+
+	ret = dict_get_str (data, "sql", &sql);
+	if (ret)
+		return -1;
+
+	strprintf (strfd, "%s\n", sql);
+
+	return 0;
+}
+
+struct meta_ops imess_view_sql_ops = {
+	.file_fill = imess_view_sql_file_fill,
+};
+
+int
+meta_imess_view_sql_hook (call_frame_t *frame, xlator_t *this, loc_t *loc,
+			  dict_t *xdata)
+{
+	meta_ops_set (loc->inode, this, &imess_view_sql_ops);
+	meta_ctx_set (loc->inode, this, meta_ctx_get (loc->parent, this));
+
+	return 0;
+}
+
+static int
+imess_view_count_file_fill (xlator_t *this, inode_t *file, strfd_t *strfd)
+{
+	int ret        = 0;
+	uint64_t count = 0;
+	dict_t *data   = NULL;
+
+	data = meta_ctx_get (file, this);
+
+	ret = dict_get_uint64 (data, "count", &count);
+	if (ret)
+		return -1;
+
+	strprintf (strfd, "%llu\n", (unsigned long long) count);
+
+	return 0;
+}
+
+struct meta_ops imess_view_count_ops = {
+	.file_fill = imess_view_count_file_fill,
+};
+
+int
+meta_imess_view_count_hook (call_frame_t *frame, xlator_t *this, loc_t *loc,
+		  	    dict_t *xdata)
+{
+	meta_ops_set (loc->inode, this, &imess_view_count_ops);
+	meta_ctx_set (loc->inode, this, meta_ctx_get (loc->parent, this));
+
+	return 0;
+}
+
 static struct meta_dirent imess_view_dir_dirents[] = {
 	DOT_DOTDOT,
+
+	{ .name = "query",
+	  .type = IA_IFREG,
+	  .hook = meta_imess_view_sql_hook,
+	},
+	{ .name = "count",
+	  .type = IA_IFREG,
+	  .hook = meta_imess_view_count_hook,
+	},
 	{ .name = NULL }
 };
 
@@ -130,6 +203,10 @@ meta_imess_view_dir_hook (call_frame_t *frame, xlator_t *this, loc_t *loc,
 
 	ret = syncop_ipc (FIRST_CHILD (this), IMESS_IPC_OP,
 				data_in, &data_out);
+	if (ret)
+		return -1;
+
+	ret = dict_set_str (data_out, "sql", sql);
 	if (ret)
 		return -1;
 
