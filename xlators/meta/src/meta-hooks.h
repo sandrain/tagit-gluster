@@ -51,6 +51,8 @@ DECLARE_HOOK(analyzethis_self);
 #ifdef HAVE_IMESS
 DECLARE_HOOK(imess_dir);
 DECLARE_HOOK(imess_views_dir);
+DECLARE_HOOK(imess_view_dir);
+DECLARE_HOOK(imess_view_link);
 DECLARE_HOOK(imess_tags_dir);
 #endif
 

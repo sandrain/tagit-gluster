@@ -42,10 +42,15 @@ endif
 if ENABLE_IMESS
 meta_la_SOURCES += imess.c \
 		   imess-views.c \
+		   imess-views-db.c \
 		   imess-tags.c
 endif
 
 meta_la_LIBADD = $(top_builddir)/libglusterfs/src/libglusterfs.la
+
+if ENABLE_IMESS
+meta_la_LIBADD += $(SQLITE_LIBS)
+endif
 
 noinst_HEADERS = meta.h meta-hooks.h meta-mem-types.h
 
