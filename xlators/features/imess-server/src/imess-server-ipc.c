@@ -191,7 +191,10 @@ ims_sys_setxattr (ims_priv_t *priv, const char *path, ims_xdb_attr_t *xattr)
 	else
 		goto out;
 
+	/* FIXME: what is the right way to handle this? */
 	size = strlen (value);
+	if (xattr->type == IMS_XDB_TYPE_STRING)
+		size -= 1;
 
 	op_ret = sys_lsetxattr (path, xattr->name, value, size,
 				XATTR_CREATE);
