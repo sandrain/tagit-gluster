@@ -191,7 +191,7 @@ ims_sys_setxattr (ims_priv_t *priv, const char *path, ims_xdb_attr_t *xattr)
 	else
 		goto out;
 
-	size = strlen (value) - 1;	/* not counting the last '\0' */
+	size = strlen (value);
 
 	op_ret = sys_lsetxattr (path, xattr->name, value, size,
 				XATTR_CREATE);
