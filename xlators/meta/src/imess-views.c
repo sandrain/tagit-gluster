@@ -3,12 +3,26 @@
 #include "config.h"
 #endif
 
+#include <sys/time.h>
+
 #include "xlator.h"
 #include "defaults.h"
 #include "syncop.h"
 
 #include "meta-mem-types.h"
 #include "meta.h"
+
+static inline double
+timediff_double (struct timeval *before, struct timeval *after)
+{
+	double lat = .0f;
+
+	lat = 1000000.0 * after->tv_sec + after->tv_usec;
+	lat -= (1000000.0 * before->tv_sec + before->tv_usec);
+	lat /= 1000000.0;
+
+	return lat;
+}
 
 /* imess-views-db.c */
 int imess_viewdb_getlist (dict_t *data);
@@ -121,6 +135,38 @@ meta_imess_view_count_hook (call_frame_t *frame, xlator_t *this, loc_t *loc,
 	return 0;
 }
 
+static int
+imess_view_latency_file_fill (xlator_t *this, inode_t *file, strfd_t *strfd)
+{
+	int ret        = 0;
+	double latency = 0;
+	dict_t *data   = NULL;
+
+	data = meta_ctx_get (file, this);
+
+	ret = dict_get_double (data, "latency", &latency);
+	if (ret)
+		return -1;
+
+	strprintf (strfd, "%lf\n", latency);
+
+	return 0;
+}
+
+struct meta_ops imess_view_latency_ops = {
+	.file_fill = imess_view_latency_file_fill,
+};
+
+int
+meta_imess_view_latency_hook (call_frame_t *frame, xlator_t *this, loc_t *loc,
+		  	    dict_t *xdata)
+{
+	meta_ops_set (loc->inode, this, &imess_view_latency_ops);
+	meta_ctx_set (loc->inode, this, meta_ctx_get (loc->parent, this));
+
+	return 0;
+}
+
 static struct meta_dirent imess_view_dir_dirents[] = {
 	DOT_DOTDOT,
 
@@ -131,6 +177,10 @@ static struct meta_dirent imess_view_dir_dirents[] = {
 	{ .name = "count",
 	  .type = IA_IFREG,
 	  .hook = meta_imess_view_count_hook,
+	},
+	{ .name = "latency",
+	  .type = IA_IFREG,
+	  .hook = meta_imess_view_latency_hook,
 	},
 	{ .name = NULL }
 };
@@ -180,11 +230,14 @@ int
 meta_imess_view_dir_hook (call_frame_t *frame, xlator_t *this, loc_t *loc,
 				dict_t *xdata)
 {
-	int ret          = 0;
-	char *sql        = NULL;
-	dict_t *data     = NULL;
-	dict_t *data_in  = NULL;
-	dict_t *data_out = NULL;
+	int ret           = 0;
+	char *sql         = NULL;
+	dict_t *data      = NULL;
+	dict_t *data_in   = NULL;
+	dict_t *data_out  = NULL;
+	struct timeval t1 = { 0, };	/* query latency */
+	struct timeval t2 = { 0, };
+	double latency    = .0f;
 
 	data = meta_ctx_get (loc->parent, this);
 	ret = dict_get_str (data, (char *) loc->name, &sql);
@@ -201,12 +254,20 @@ meta_imess_view_dir_hook (call_frame_t *frame, xlator_t *this, loc_t *loc,
 	if (ret)
 		return -1;
 
+	gettimeofday (&t1, NULL);
+
 	ret = syncop_ipc (FIRST_CHILD (this), IMESS_IPC_OP,
 				data_in, &data_out);
 	if (ret)
 		return -1;
 
+	gettimeofday (&t2, NULL);
+	latency = timediff_double (&t1, &t2);
+
 	ret = dict_set_str (data_out, "sql", sql);
+	if (ret)
+		return -1;
+	ret = dict_set_double (data_out, "latency", latency);
 	if (ret)
 		return -1;
 
