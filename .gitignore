@@ -36,6 +36,9 @@ log
 *.trs
 *_unittest
 
+# nfs garbage
+.nfs*
+
 # Generated files
 *.py[co]
 api/examples/__init__.py
