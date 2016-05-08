@@ -901,6 +901,7 @@ init (xlator_t *this)
 	GF_OPTION_INIT ("enable-lookup-cache", priv->lookup_cache,
 			bool, out);
 	GF_OPTION_INIT ("enable-async-update", priv->async_update, bool, out);
+	GF_OPTION_INIT ("enable-async-queue-log", priv->async_log, bool, out);
 	GF_OPTION_INIT ("enable-dir-hash", priv->dir_hash, bool, out);
 
 	/* FIXME: get the brick path */
@@ -928,6 +929,7 @@ init (xlator_t *this)
 			"FATAL: ims_async_init failed (ret=%d)", ret);
 		goto out;
 	}
+	priv->async_ctx->async_log = priv->async_log;
 
 	/* we need another db connection */
 	ret = ims_xdb_init (&priv->xdb, priv->db_path, mode);
@@ -1041,6 +1043,12 @@ struct volume_options options [] = {
 	  .default_value = "off",
 	  .description = "Turn on the asynchronous database update "
 			 "to speed up.",
+	},
+	{ .key = { "enable-async-queue-log" },
+	  .type = GF_OPTION_TYPE_BOOL,
+	  .default_value = "off",
+	  .description = "Log the queue time of the requests in "
+			 "asynchronous mode.",
 	},
 	{ .key = { "enable-dir-hash" },
 	  .type = GF_OPTION_TYPE_BOOL,
