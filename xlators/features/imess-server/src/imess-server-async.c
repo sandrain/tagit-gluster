@@ -161,6 +161,11 @@ static inline int worker_remove_xattr (ims_async_t *self, ims_task_t *task)
 	return 0;
 }
 
+static const char *opstrs[] = {
+	"create_file", "unlink_file", "update_stat", "link_file",
+	"rename", "insert_xattr", "remove_xattr"
+};
+
 static void *ims_async_work (void *arg)
 {
 	int ret			= 0;
@@ -168,6 +173,7 @@ static void *ims_async_work (void *arg)
 	ims_async_t *self	= NULL;
 	ims_xdb_t *xdb 		= NULL;
 	ims_task_t *task	= NULL;
+	double timegap          = 0.0;
 
 	self = arg;
 	xdb = self->xdb;
@@ -214,6 +220,17 @@ static void *ims_async_work (void *arg)
 				"(ret=%d, db_ret=%d, op=%d, file=%s, gfid=%s)",
 				ret, xdb->db_ret,
 				task->op, task->file.path, task->file.gfid);
+
+		if (self->async_log) {
+			gettimeofday (&task->t_complete, NULL);
+
+			timegap = timegap_double (&task->t_enqueue,
+					          &task->t_complete);
+
+			gf_log ("ims_async", GF_LOG_INFO,
+				"(%s) queue time = %.6lf sec\n",
+				opstrs[task->op], timegap);
+		}
 
 		task_destroy (task);
 		sleep_time = 1000;	/* 1 msec */
@@ -279,6 +296,8 @@ int ims_async_put_task (ims_async_t *self, ims_task_t *task)
 	if (!cp_task)
 		goto out;
 
+	if (self->async_log)
+		gettimeofday (&cp_task->t_enqueue, NULL);
 	task_queue_append (self, cp_task);
 
 	ret = 0;

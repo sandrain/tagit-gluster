@@ -16,6 +16,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <pthread.h>
+#include <sys/time.h>
 
 #include "glusterfs.h"
 #include "xlator.h"
@@ -52,6 +53,10 @@ struct _ims_task {
 	struct stat	  sb;
 
 	ims_xdb_attr_t	  attr;
+
+	/* timestamp to record queue delay */
+	struct timeval    t_enqueue;
+	struct timeval    t_complete;
 };
 
 typedef struct _ims_task ims_task_t;
@@ -61,6 +66,8 @@ struct _ims_async {
 	pthread_t                worker;
 	struct list_head	 task_queue;
 	pthread_spinlock_t	 lock;
+
+	gf_boolean_t             async_log;
 };
 
 typedef struct _ims_async ims_async_t;
@@ -78,6 +85,7 @@ struct _ims_priv {
 
 	gf_boolean_t	 lookup_cache;	/* TODO: enable lookup cache */
 	gf_boolean_t	 async_update;	/* asynchronous xdb update */
+	gf_boolean_t     async_log;	/* asynchronous log switch */
 	gf_boolean_t	 dir_hash;	/* store dir index entry only in a
 					   hashed location */
 
@@ -297,8 +305,6 @@ done:
 out:
 	return 0;
 }
-
-#include <sys/time.h>
 
 static inline void
 timeval_latency (struct timeval *out,
