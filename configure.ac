@@ -190,11 +190,6 @@ AC_CONFIG_FILES([Makefile
                 xlators/mgmt/Makefile
                 xlators/mgmt/glusterd/Makefile
                 xlators/mgmt/glusterd/src/Makefile
-		xlators/analyzethis/Makefile
-		xlators/analyzethis/client/Makefile
-		xlators/analyzethis/client/src/Makefile
-		xlators/analyzethis/server/Makefile
-		xlators/analyzethis/server/src/Makefile
                 cli/Makefile
                 cli/src/Makefile
                 doc/Makefile
@@ -642,27 +637,7 @@ fi
 
 # end IMESS section
 
-# ANALYZETHIS section
-
-AC_ARG_ENABLE([analyzethis],
-	        AC_HELP_STRING([--enable-analyzethis],
-			[Build AnalyzeThis features and translators]),
-		[],
-		[enable_analyzethis=no])
-
-# any necessary libraries?
-#if test "x$enable_analyzethis" != "xno"; then
-#fi
-
-BUILD_ANALYZETHIS=no
-if test "x${enable_analyzethis}" != "xno"; then
-  BUILD_ANALYZETHIS=yes
-  AC_DEFINE(HAVE_ANALYZETHIS, 1, [enable AnalyzeThis])
-fi
-
-# end ANALYZETHIS section
-
-# EPOLL section
+# # EPOLL section
 AC_ARG_ENABLE([epoll],
               AC_HELP_STRING([--disable-epoll],
                              [Use poll instead of epoll.]))
@@ -1137,9 +1112,6 @@ AC_SUBST(UMOUNTD_SUBDIR)
 # enable/disable iMess
 AM_CONDITIONAL([ENABLE_IMESS], [test x$BUILD_IMESS = xyes])
 
-# enable/disable AnalyzeThis
-AM_CONDITIONAL([ENABLE_ANALYZETHIS], [test x$BUILD_ANALYZETHIS = xyes])
-
 # enable/disable QEMU
 AM_CONDITIONAL([ENABLE_QEMU_BLOCK], [test x$BUILD_QEMU_BLOCK = xyes])
 
@@ -1408,5 +1380,4 @@ echo "Unit Tests           : $BUILD_UNITTEST"
 echo "POSIX ACLs           : $BUILD_POSIX_ACLS"
 echo "Data Classification  : $BUILD_GFDB"
 echo "iMess                : $BUILD_IMESS"
-echo "AnalyzeThis          : $BUILD_ANALYZETHIS"
 echo

@@ -32,13 +32,6 @@ meta_la_SOURCES = meta.c meta-helpers.c meta-defaults.c \
 	measure-file.c \
 	profile-file.c
 
-if ENABLE_ANALYZETHIS
-meta_la_SOURCES += analyzethis-submit.c \
-		   analyzethis-jobs.c \
-		   analyzethis-self.c \
-		   analyzethis.c
-endif
-
 if ENABLE_IMESS
 meta_la_SOURCES += imess.c \
 		   imess-views.c \
