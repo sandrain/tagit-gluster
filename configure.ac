@@ -250,7 +250,9 @@ AC_CONFIG_FILES([Makefile
 	        tools/glusterfind/Makefile
                 tools/glusterfind/src/Makefile
 		tools/imess-cli/Makefile
-		tools/imess-cli/src/Makefile])
+		tools/imess-cli/src/Makefile
+		tools/imess-recovery/Makefile
+		tools/imess-recovery/src/Makefile])
 
 AC_CANONICAL_HOST
 

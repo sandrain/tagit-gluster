@@ -1,0 +1,5 @@
+if ENABLE_IMESS
+SUBDIRS = src
+
+CLEANFILES =
+endif
