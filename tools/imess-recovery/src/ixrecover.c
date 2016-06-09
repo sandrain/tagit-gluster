@@ -32,6 +32,8 @@
 #define	MAX_XATTR_VAL	65536
 #define GFID_LEN	32
 
+#define	_llu(x)		((unsigned long long) (x))
+
 struct xattr {
 	char *name;
 	char val[MAX_XATTR_VAL];
@@ -62,7 +64,7 @@ static uint64_t gfid_num;
 
 /* runtime options */
 static int verbose;
-static int benchmark;
+#define vmsg(...)	do { if (verbose) printf("# " __VA_ARGS__); } while (0)
 
 /* program arguments */
 static char *logfile;
@@ -73,6 +75,53 @@ static char linebuf[512];
 /* runtime statistics */
 static uint64_t total_files;
 static uint64_t total_xattrs;
+static struct timeval t_recovery_begin;
+static struct timeval t_recovery_end;
+
+/*
+ * timing calculation
+ */
+static inline void
+timeval_latency(struct timeval *out,
+		struct timeval *before, struct timeval *after)
+{
+	time_t sec       = 0;
+	suseconds_t usec = 0;
+
+	if (!out || !before || !after)
+		return;
+
+	sec = after->tv_sec - before->tv_sec;
+	if (after->tv_usec < before->tv_usec) {
+		sec -= 1;
+		usec = 1000000 + after->tv_usec - before->tv_usec;
+	}
+	else
+		usec = after->tv_usec - before->tv_usec;
+
+	out->tv_sec = sec;
+	out->tv_usec = usec;
+}
+
+static inline double timeval_to_sec(struct timeval *t)
+{
+	double sec = 0.0F;
+
+	sec += t->tv_sec;
+	sec += (double) 0.000001 * t->tv_usec;
+
+	return sec;
+}
+
+static inline double
+timegap_double(struct timeval *before, struct timeval *after)
+{
+	struct timeval lat = { 0, };
+
+	timeval_latency(&lat, before, after);
+
+	return timeval_to_sec(&lat);
+}
 
 /*
  * database related
@@ -169,6 +218,8 @@ static int db_connect(void)
 			goto db_error;
 	}
 
+	vmsg("connected to database (%s)\n", dbpath);
+
 	ret = exec_simple_sql("begin transaction;");
 	if (ret != SQLITE_OK)
 		goto db_error;
@@ -194,15 +245,10 @@ static int db_disconnect(void)
 		if (ret != SQLITE_OK)
 			goto db_error;
 
-#if 0
-		ret = exec_simple_sql(
-				"pragma schema.wal_checkpoint(TRUNCATE);");
-		if (ret != SQLITE_OK)
-			goto db_error;
-#endif
-
 		sqlite3_close(conn);
 	}
+
+	vmsg("database closed\n");
 
 	return 0;
 
@@ -226,13 +272,17 @@ static int read_attributes(const char *file)
 
 	fattr->file = file;
 
-	/* generate gfid */
-	snprintf(fattr->gfid, 32, "%31llu", (unsigned long long) gfid_num++);
+	vmsg("processing %s\n", file);
+
+	snprintf(fattr->gfid, 32, "%031llu", _llu(gfid_num++));
+	vmsg(" - gfid is generated: %s\n", fattr->gfid);
 
 	/* stat attributes */
 	ret = lstat(file, &fattr->stat);
 	if (ret)
 		return ret;
+
+	vmsg(" - stat attributes are collected\n");
 
 	/* load extended attributes */
 	listlen = llistxattr(file, xattrlist, sizeof(xattrlist));
@@ -250,9 +300,13 @@ static int read_attributes(const char *file)
 
 		current->len = valuelen;
 		i++;
+
+		vmsg(" - read xattr %s\n", current->name);
 	}
 
 	fattr->n_xattrs = i;
+
+	vmsg(" - %d xattrs are collected\n", i);
 
 	return ret;
 }
@@ -334,6 +388,8 @@ static int update_database(void)
 	fattr->gid = sqlite3_last_insert_rowid(conn);
 	sqlite3_reset(stmt);
 
+	vmsg(" - inserted gfid to database\n");
+
 	/* insert file */
 	stmt = stmts[INSERT_FILE];
 
@@ -351,6 +407,8 @@ static int update_database(void)
 	fattr->fid = sqlite3_last_insert_rowid(conn);
 	sqlite3_reset(stmt);
 
+	vmsg(" - inserted file to database\n");
+
 	/* insert stat */
 	stmt = stmts[INSERT_STAT];
 
@@ -364,12 +422,16 @@ static int update_database(void)
 
 	sqlite3_reset(stmt);
 
+	vmsg(" - inserted stat records to database\n");
+
 	/* TODO: for now, we treat all xattrs as string values. */
 	for (i = 0; i < fattr->n_xattrs; i++) {
+		struct xattr *xattr = &fattr->xattrs[i];
+
 		/* insert xattr name */
 		stmt = stmts[INSERT_XNAME];
 
-		ret = sqlite3_bind_text(stmt, 1, fattr->xattrs->name, -1,
+		ret = sqlite3_bind_text(stmt, 1, xattr->name, -1,
 					SQLITE_STATIC);
 		if (ret != SQLITE_OK)
 			goto db_error;
@@ -384,11 +446,11 @@ static int update_database(void)
 		stmt = stmts[INSERT_XDATA];
 
 		ret = sqlite3_bind_int(stmt, 1, fattr->gid);
-		ret |= sqlite3_bind_text(stmt, 2, fattr->xattrs->name, -1,
+		ret |= sqlite3_bind_text(stmt, 2, xattr->name, -1,
 					SQLITE_STATIC);
 		ret |= sqlite3_bind_null(stmt, 3);
 		ret |= sqlite3_bind_null(stmt, 4);
-		ret |= sqlite3_bind_text(stmt, 5, fattr->xattrs->val, -1,
+		ret |= sqlite3_bind_text(stmt, 5, xattr->val, -1,
 					SQLITE_STATIC);
 
 		if (ret != SQLITE_OK)
@@ -401,6 +463,13 @@ static int update_database(void)
 		sqlite3_reset(stmt);
 	}
 
+	vmsg(" - inserted %d xattr records to database\n",
+		fattr->n_xattrs);
+
+	/* update statistics */
+	total_files++;
+	total_xattrs += fattr->n_xattrs;
+
 	return 0;
 
 db_error:
@@ -412,6 +481,8 @@ static int do_recovery(void)
 {
 	int ret = 0;
 	FILE *fp = NULL;
+
+	gettimeofday(&t_recovery_begin, NULL);
 
 	fp = fopen(logfile, "r");
 	if (!fp) {
@@ -447,6 +518,8 @@ static int do_recovery(void)
 		goto out_close;
 	}
 
+	gettimeofday(&t_recovery_end, NULL);
+
 out_close:
 	fclose(fp);
 out:
@@ -454,19 +527,17 @@ out:
 }
 
 static struct option opts[] = {
-	{ .name = "benchmark", .has_arg = 0, .flag = NULL, .val = 'b' },
 	{ .name = "help", .has_arg = 0, .flag = NULL, .val = 'h' },
 	{ .name = "verbose", .has_arg = 0, .flag = NULL, .val = 'v' },
 	{ 0, 0, 0, 0},
 };
 
 static const char *usage_str =
-"ixrecover [OPTIONS] <index database> <log file>\n"
+"\nixrecover [OPTIONS] <index database> <log file>\n"
 "\n"
 "OPTIONS:\n"
-"--benchmark, -b        Print timing information.\n"
 "--help, -h             Help message.\n"
-"--verbose, -v          Produce noisy output.\n";
+"--verbose, -v          Produce noisy output.\n\n";
 
 static void print_usage(void)
 {
@@ -478,11 +549,10 @@ int main(int argc, char **argv)
 	int ret = 0;
 	int op = 0;
 
-	while ((op = getopt_long(argc, argv, "bhv", opts, NULL)) != -1) {
+	while ((op = getopt_long(argc, argv, "hgv", opts, NULL)) != -1) {
 		switch (op) {
-		case 'b':
-			break;
 		case 'v':
+			verbose = 1;
 			break;
 		default:
 			print_usage();
@@ -510,6 +580,11 @@ int main(int argc, char **argv)
 		perror("recovery failed");
 
 	db_disconnect();
+
+	printf("%llu files and %llu xattrs are updated\n",
+		_llu(total_files), _llu(total_xattrs));
+	printf("recovery finished in %.3lf seconds\n",
+		timegap_double(&t_recovery_begin, &t_recovery_end));
 
 	return ret;
 }
