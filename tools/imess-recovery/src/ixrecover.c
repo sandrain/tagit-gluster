@@ -189,14 +189,17 @@ static int db_disconnect(void)
 		for (i = 0; i < N_SQLS; i++)
 			sqlite3_finalize(stmts[i]);
 
+
 		ret = exec_simple_sql("end transaction;");
 		if (ret != SQLITE_OK)
 			goto db_error;
 
+#if 0
 		ret = exec_simple_sql(
 				"pragma schema.wal_checkpoint(TRUNCATE);");
 		if (ret != SQLITE_OK)
 			goto db_error;
+#endif
 
 		sqlite3_close(conn);
 	}
@@ -227,12 +230,12 @@ static int read_attributes(const char *file)
 	snprintf(fattr->gfid, 32, "%31llu", (unsigned long long) gfid_num++);
 
 	/* stat attributes */
-	ret = stat(file, &fattr->stat);
+	ret = lstat(file, &fattr->stat);
 	if (ret)
 		return ret;
 
 	/* load extended attributes */
-	listlen = listxattr(file, xattrlist, sizeof(xattrlist));
+	listlen = llistxattr(file, xattrlist, sizeof(xattrlist));
 	if (listlen < 0)
 		return -1;
 
@@ -240,7 +243,7 @@ static int read_attributes(const char *file)
 		struct xattr *current = &fattr->xattrs[i];
 
 		current->name = &xattrlist[pos];
-		valuelen = getxattr(file, current->name, current->val,
+		valuelen = lgetxattr(file, current->name, current->val,
 					MAX_XATTR_VAL);
 		if (valuelen < 0)
 			return -1;
@@ -398,7 +401,7 @@ static int update_database(void)
 		sqlite3_reset(stmt);
 	}
 
-	return ret;
+	return 0;
 
 db_error:
 	dberror(ret);
