@@ -94,3 +94,4 @@ extras/peer_add_secret_pub
 tools/gfind_missing_files/gcrawler
 tools/glusterfind/glusterfind
 tools/glusterfind/src/tool.conf
+tools/imess-recovery/src/ixrecover
