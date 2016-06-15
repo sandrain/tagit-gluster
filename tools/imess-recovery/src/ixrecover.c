@@ -64,6 +64,7 @@ static uint64_t gfid_num;
 
 /* runtime options */
 static int verbose;
+static uint64_t count;
 #define vmsg(...)	do { if (verbose) printf("# " __VA_ARGS__); } while (0)
 
 /* program arguments */
@@ -481,6 +482,7 @@ static int do_recovery(void)
 {
 	int ret = 0;
 	FILE *fp = NULL;
+	uint64_t processed = 0;
 
 	gettimeofday(&t_recovery_begin, NULL);
 
@@ -512,12 +514,21 @@ static int do_recovery(void)
 			goto out_close;
 
 		}
+
+		processed++;
+
+		if (processed == count) {
+			vmsg("%llu files are processed, finishing..\n",
+				_llu(processed));
+			goto done;
+		}
 	}
 	if (ferror(fp)) {
 		perror("Error while reading the input file");
 		goto out_close;
 	}
 
+done:
 	gettimeofday(&t_recovery_end, NULL);
 
 out_close:
@@ -527,6 +538,7 @@ out:
 }
 
 static struct option opts[] = {
+	{ .name = "count", .has_arg = 1, .flag = NULL, .val = 'c' },
 	{ .name = "help", .has_arg = 0, .flag = NULL, .val = 'h' },
 	{ .name = "verbose", .has_arg = 0, .flag = NULL, .val = 'v' },
 	{ 0, 0, 0, 0},
@@ -536,6 +548,7 @@ static const char *usage_str =
 "\nixrecover [OPTIONS] <index database> <log file>\n"
 "\n"
 "OPTIONS:\n"
+"--count=NUM, -c NUM    Process only first NUM entries\n"
 "--help, -h             Help message.\n"
 "--verbose, -v          Produce noisy output.\n\n";
 
@@ -549,8 +562,11 @@ int main(int argc, char **argv)
 	int ret = 0;
 	int op = 0;
 
-	while ((op = getopt_long(argc, argv, "hgv", opts, NULL)) != -1) {
+	while ((op = getopt_long(argc, argv, "c:hgv", opts, NULL)) != -1) {
 		switch (op) {
+		case 'c':
+			count = strtoull(optarg, 0, 0);
+			break;
 		case 'v':
 			verbose = 1;
 			break;
@@ -581,9 +597,8 @@ int main(int argc, char **argv)
 
 	db_disconnect();
 
-	printf("%llu files and %llu xattrs are updated\n",
-		_llu(total_files), _llu(total_xattrs));
-	printf("recovery finished in %.3lf seconds\n",
+	printf("%llu files and %llu xattrs are updated in %.6lf seconds\n",
+		_llu(total_files), _llu(total_xattrs),
 		timegap_double(&t_recovery_begin, &t_recovery_end));
 
 	return ret;
