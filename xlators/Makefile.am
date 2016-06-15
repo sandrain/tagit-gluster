@@ -1,4 +1,4 @@
 SUBDIRS = cluster storage protocol performance debug features encryption mount nfs mgmt system \
-          playground meta analyzethis
+          playground meta
 
 CLEANFILES =

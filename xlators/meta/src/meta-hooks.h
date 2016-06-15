@@ -42,12 +42,6 @@ DECLARE_HOOK(master_dir);
 DECLARE_HOOK(meminfo_file);
 DECLARE_HOOK(measure_file);
 DECLARE_HOOK(profile_file);
-#ifdef HAVE_ANALYZETHIS
-DECLARE_HOOK(analyzethis_dir);
-DECLARE_HOOK(analyzethis_submit);
-DECLARE_HOOK(analyzethis_jobs);
-DECLARE_HOOK(analyzethis_self);
-#endif
 #ifdef HAVE_IMESS
 DECLARE_HOOK(imess_dir);
 DECLARE_HOOK(imess_views_dir);

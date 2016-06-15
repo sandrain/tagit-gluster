@@ -1,5 +1,0 @@
-if ENABLE_ANALYZETHIS
-SUBDIRS = client server
-
-CLEANFILES =
-endif
