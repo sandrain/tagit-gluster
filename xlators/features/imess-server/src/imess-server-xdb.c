@@ -163,12 +163,14 @@ static int db_initialize (ims_xdb_t *self)
 	psql = self->mode == XDB_MODE_ASYNC
 		? xdb_sqls[PRAGMA_ASYNC] : xdb_sqls[PRAGMA_SYNC];
 #endif
-	psql = xdb_sqls[PRAGMA_SYNC];
+	if (self->mode == XDB_MODE_ASYNC) {
+		psql = xdb_sqls[PRAGMA_SYNC];
 
-	/* do it this before 'anything else'!! */
-	db_ret = ims_xdb_exec_simple_sql (self, psql);
-	if (db_ret)
-		goto out;
+		/* do it this before 'anything else'!! */
+		db_ret = ims_xdb_exec_simple_sql (self, psql);
+		if (db_ret)
+			goto out;
+	}
 
 	db_ret = sqlite3_prepare_v2 (self->conn, xdb_sqls[TABLE_EXISTS], -1,
 			&stmt, 0);
@@ -241,7 +243,7 @@ out:
 	return ret;
 }
 
-	static inline int
+static inline int
 bind_sattr(sqlite3_stmt *stmt, uint64_t fid, int *i, uint64_t ival)
 {
 	int ret = 0;
@@ -266,7 +268,7 @@ bind_sattr(sqlite3_stmt *stmt, uint64_t fid, int *i, uint64_t ival)
 		if (ret) goto out;                                      \
 	} while (0);
 
-	static inline int
+static inline int
 bind_stat(sqlite3_stmt *stmt, uint64_t fid, struct stat *sb)
 {
 	int ret = 0;
@@ -290,7 +292,7 @@ out:
 	return ret;
 }
 
-	static
+static
 int direct_query_callback (void *cdata, int argc, char **argv, char **colname)
 {
 	int ret                       = 0;
