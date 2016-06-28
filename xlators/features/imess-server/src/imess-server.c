@@ -1052,7 +1052,7 @@ struct volume_options options [] = {
 	},
 	{ .key = { "enable-dir-hash" },
 	  .type = GF_OPTION_TYPE_BOOL,
-	  .default_value = "off",
+	  .default_value = "on",
 	  .description = "Turn on the dir hashing to store the directory "
 			 "index record on a single brick",
 	},
