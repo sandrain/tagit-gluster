@@ -181,8 +181,9 @@ static void *ims_async_work (void *arg)
 	while (1) {
 		task = task_queue_fetch (self);
 		if (!task) {
-			sleep_time = 5*1000;	/* 5 msec */
-			goto sleep;
+			sleep_time = 1000;	/* 1 miscrosec */
+			usleep (sleep_time);
+			continue;
 		}
 
 		switch (task->op) {
@@ -221,21 +222,18 @@ static void *ims_async_work (void *arg)
 				ret, xdb->db_ret,
 				task->op, task->file.path, task->file.gfid);
 
-		if (self->async_log) {
+		if (self->latency_log) {
 			gettimeofday (&task->t_complete, NULL);
 
 			timegap = timegap_double (&task->t_enqueue,
 					          &task->t_complete);
 
 			gf_log ("ims_async", GF_LOG_INFO,
-				"(%s) queue time = %.6lf sec\n",
+				"(%s) queue_time = %.6lf sec",
 				opstrs[task->op], timegap);
 		}
 
 		task_destroy (task);
-		sleep_time = 1000;	/* 1 msec */
-sleep:
-		usleep (sleep_time);
 	}
 
 	return (void *) 0;
@@ -296,7 +294,7 @@ int ims_async_put_task (ims_async_t *self, ims_task_t *task)
 	if (!cp_task)
 		goto out;
 
-	if (self->async_log)
+	if (self->latency_log)
 		gettimeofday (&cp_task->t_enqueue, NULL);
 	task_queue_append (self, cp_task);
 

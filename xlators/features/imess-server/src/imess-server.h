@@ -67,7 +67,7 @@ struct _ims_async {
 	struct list_head	 task_queue;
 	pthread_spinlock_t	 lock;
 
-	gf_boolean_t             async_log;
+	gf_boolean_t             latency_log;
 };
 
 typedef struct _ims_async ims_async_t;
@@ -85,7 +85,7 @@ struct _ims_priv {
 
 	gf_boolean_t	 lookup_cache;	/* TODO: enable lookup cache */
 	gf_boolean_t	 async_update;	/* asynchronous xdb update */
-	gf_boolean_t     async_log;	/* asynchronous log switch */
+	gf_boolean_t     latency_log;	/* log the latencies */
 	gf_boolean_t	 dir_hash;	/* store dir index entry only in a
 					   hashed location */
 

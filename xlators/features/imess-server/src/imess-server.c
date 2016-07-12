@@ -103,6 +103,8 @@ ims_mkdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	int ret          = 0;
 	const char *path = NULL;
 	ims_priv_t *priv = NULL;
+	struct timeval before = { 0, };
+	struct timeval after = { 0, };
 
 	if (op_ret == -1)
 		goto out;
@@ -113,12 +115,26 @@ ims_mkdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 		goto out;
 
 	priv = this->private;
+
+	if (priv->latency_log)
+		gettimeofday (&before, NULL);
+
 	ret = insert_new_xdb_entry (priv, buf, (const char *) cookie);
 	if (ret)
 		gf_log (this->name, GF_LOG_WARNING,
 			"ims_mkdir_cbk: populate_xdb failed "
 			"(ret=%d, db_ret=%d)",
 			ret, priv->xdb->db_ret);
+
+	if (priv->latency_log) {
+		double timegap = .0f;
+
+		gettimeofday (&after, NULL);
+		timegap = timegap_double (&before, &after);
+
+		gf_log (this->name, GF_LOG_INFO,
+			"dblatency_mkdir = %.6lf sec", timegap);
+	}
 
 out:
 	STACK_UNWIND_STRICT (mkdir, frame, op_ret, op_errno, inode, buf,
@@ -173,11 +189,16 @@ ims_unlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 {
 	int ret             = 0;
 	ims_priv_t *priv    = NULL;
+	struct timeval before = { 0, };
+	struct timeval after = { 0, };
 
 	if (op_ret == -1)
 		goto out;
 
 	priv = this->private;
+
+	if (priv->latency_log)
+		gettimeofday (&before, NULL);
 
 	ret = unlink_from_xdb (priv, cookie);
 	if (ret)
@@ -185,6 +206,16 @@ ims_unlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 			"ims_unlink_cbk: xdb_remove_file failed "
 			"(ret=%d, db_ret=%d)",
 			ret, priv->xdb->db_ret);
+
+	if (priv->latency_log) {
+		double timegap = .0f;
+
+		gettimeofday (&after, NULL);
+		timegap = timegap_double (&before, &after);
+
+		gf_log (this->name, GF_LOG_INFO,
+			"dblatency_unlink = %.6lf sec", timegap);
+	}
 
 out:
 	STACK_UNWIND_STRICT (unlink, frame, op_ret, op_errno,
@@ -217,17 +248,33 @@ ims_rmdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 {
 	int ret             = 0;
 	ims_priv_t *priv    = NULL;
+	struct timeval before = { 0, };
+	struct timeval after = { 0, };
 
 	if (op_ret == -1)
 		goto out;
 
 	priv = this->private;
+
+	if (priv->latency_log)
+		gettimeofday (&before, NULL);
+
 	ret = unlink_from_xdb (priv, cookie);
 	if (ret)
 		gf_log (this->name, GF_LOG_WARNING,
 			"ims_rmdir_cbk: xdb_remove_file failed "
 			"(ret=%d, db_ret=%d)",
 			ret, priv->xdb->db_ret);
+
+	if (priv->latency_log) {
+		double timegap = .0f;
+
+		gettimeofday (&after, NULL);
+		timegap = timegap_double (&before, &after);
+
+		gf_log (this->name, GF_LOG_INFO,
+			"dblatency_rmdir = %.6lf sec", timegap);
+	}
 
 out:
 	STACK_UNWIND_STRICT (rmdir, frame, op_ret, op_errno,
@@ -305,6 +352,8 @@ ims_setxattr_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	ims_priv_t *priv      = NULL;
 	ims_xdb_t *xdb        = NULL;
 	ims_xdb_attr_t *xattr = NULL;
+	struct timeval before = { 0, };
+	struct timeval after = { 0, };
 
 	if (op_ret == -1 || cookie == NULL)
 		goto out;
@@ -312,6 +361,9 @@ ims_setxattr_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	priv = this->private;
 	xdb = priv->xdb;
 	xattr = cookie;
+
+	if (priv->latency_log)
+		gettimeofday (&before, NULL);
 
 	if (priv->async_update) {
 		ims_task_t task = { {0,0}, };
@@ -337,6 +389,16 @@ ims_setxattr_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 
 		if (xattr->sval)
 			GF_FREE ((void *) xattr->sval);
+	}
+
+	if (priv->latency_log) {
+		double timegap = .0f;
+
+		gettimeofday (&after, NULL);
+		timegap = timegap_double (&before, &after);
+
+		gf_log (this->name, GF_LOG_INFO,
+			"dblatency_setxattr = %.6lf sec", timegap);
 	}
 
 out:
@@ -417,11 +479,16 @@ ims_create_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 {
 	int ret            = 0;
 	ims_priv_t *priv = NULL;
+	struct timeval before = { 0, };
+	struct timeval after = { 0, };
 
 	if (op_ret == -1)
 		goto out;
 
 	priv = this->private;
+
+	if (priv->latency_log)
+		gettimeofday (&before, NULL);
 
 	ret = insert_new_xdb_entry (priv, buf, (const char *) cookie);
 	if (ret)
@@ -429,6 +496,16 @@ ims_create_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 			"ims_create_cbk: populate_xdb failed "
 			"(ret=%d, db_ret=%d)",
 			ret, priv->xdb->db_ret);
+
+	if (priv->latency_log) {
+		double timegap = .0f;
+
+		gettimeofday (&after, NULL);
+		timegap = timegap_double (&before, &after);
+
+		gf_log (this->name, GF_LOG_INFO,
+			"dblatency_create = %.6lf sec", timegap);
+	}
 
 out:
 	STACK_UNWIND_STRICT (create, frame, op_ret, op_errno, fd, inode, buf,
@@ -459,6 +536,8 @@ ims_setattr_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	int ret             = 0;
 	ims_priv_t *priv    = NULL;
 	ims_xdb_t *xdb      = NULL;
+	struct timeval before = { 0, };
+	struct timeval after = { 0, };
 
 	if (op_ret == -1)
 		goto out;
@@ -467,6 +546,9 @@ ims_setattr_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 		goto out;
 
 	priv = this->private;
+
+	if (priv->latency_log)
+		gettimeofday (&before, NULL);
 
 	if (priv->async_update) {
 		ims_task_t task = { {0,0}, };
@@ -495,6 +577,16 @@ ims_setattr_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 			"ims_setattr_cbk: ims_xdb_update_stat failed "
 			"(ret=%d, db_ret=%d)",
 			ret, xdb->db_ret);
+
+	if (priv->latency_log) {
+		double timegap = .0f;
+
+		gettimeofday (&after, NULL);
+		timegap = timegap_double (&before, &after);
+
+		gf_log (this->name, GF_LOG_INFO,
+			"dblatency_setattr = %.6lf sec", timegap);
+	}
 
 out:
 	STACK_UNWIND_STRICT (setattr, frame, op_ret, op_errno,
@@ -541,11 +633,16 @@ ims_symlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 {
 	int ret          = 0;
 	ims_priv_t *priv = NULL;
+	struct timeval before = { 0, };
+	struct timeval after = { 0, };
 
 	if (op_ret == -1)
 		goto out;
 
 	priv = this->private;
+
+	if (priv->latency_log)
+		gettimeofday (&before, NULL);
 
 	ret = insert_new_xdb_entry (priv, buf, (const char *) cookie);
 	if (ret)
@@ -553,6 +650,16 @@ ims_symlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 			"ims_symlink_cbk: populate_xdb failed "
 			"(ret=%d, db_ret=%d)",
 			ret, priv->xdb->db_ret);
+
+	if (priv->latency_log) {
+		double timegap = .0f;
+
+		gettimeofday (&after, NULL);
+		timegap = timegap_double (&before, &after);
+
+		gf_log (this->name, GF_LOG_INFO,
+			"dblatency_symlink = %.6lf sec", timegap);
+	}
 
 out:
 	STACK_UNWIND_STRICT (symlink, frame, op_ret, op_errno, inode, buf,
@@ -586,11 +693,16 @@ ims_link_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	int ret             = 0;
 	ims_priv_t *priv    = NULL;
 	ims_xdb_t *xdb      = NULL;
+	struct timeval before = { 0, };
+	struct timeval after = { 0, };
 
 	if (op_ret == -1)
 		goto out;
 
 	priv = this->private;
+
+	if (priv->latency_log)
+		gettimeofday (&before, NULL);
 
 	if (priv->async_update) {
 		ims_task_t task = { {0,0}, };
@@ -617,6 +729,16 @@ ims_link_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 			"ims_link_cbk: ims_xdb_link_file failed "
 			"(ret=%d, db_ret=%d)",
 			ret, xdb->db_ret);
+
+	if (priv->latency_log) {
+		double timegap = .0f;
+
+		gettimeofday (&after, NULL);
+		timegap = timegap_double (&before, &after);
+
+		gf_log (this->name, GF_LOG_INFO,
+			"dblatency_mkdir = %.6lf sec", timegap);
+	}
 
 out:
 	STACK_UNWIND_STRICT (link, frame, op_ret, op_errno, inode, buf,
@@ -689,6 +811,8 @@ ims_rename_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	ims_priv_t *priv               = NULL;
 	ims_xdb_t *xdb                 = NULL;
 	ims_rename_data_t *rename_data = NULL;
+	struct timeval before = { 0, };
+	struct timeval after = { 0, };
 
 	if (op_ret == -1)
 		goto out;
@@ -698,6 +822,9 @@ ims_rename_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 
 	priv = this->private;
 	rename_data = cookie;
+
+	if (priv->latency_log)
+		gettimeofday (&before, NULL);
 
 	if (priv->async_update) {
 		ims_task_t task = { {0,0}, };
@@ -724,6 +851,16 @@ ims_rename_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 			"ims_rename_cbk: ims_xdb_rename failed "
 			"(ret=%d, db_ret=%d))",
 			ret, xdb->db_ret);
+
+	if (priv->latency_log) {
+		double timegap = .0f;
+
+		gettimeofday (&after, NULL);
+		timegap = timegap_double (&before, &after);
+
+		gf_log (this->name, GF_LOG_INFO,
+			"dblatency_rename = %.6lf sec", timegap);
+	}
 
 out:
 	FREE (cookie);
@@ -803,7 +940,7 @@ ims_ipc (call_frame_t *frame, xlator_t *this, int op, dict_t *xdata)
 	xdout = dict_new ();
 	if (xdout == NULL) {
 		gf_log (this->name, GF_LOG_WARNING,
-			"ims_ipc: dict_new() failed.\n");
+			"ims_ipc: dict_new() failed.");
 		op_errno = ENOMEM;
 		goto out;
 	}
@@ -901,7 +1038,7 @@ init (xlator_t *this)
 	GF_OPTION_INIT ("enable-lookup-cache", priv->lookup_cache,
 			bool, out);
 	GF_OPTION_INIT ("enable-async-update", priv->async_update, bool, out);
-	GF_OPTION_INIT ("enable-async-queue-log", priv->async_log, bool, out);
+	GF_OPTION_INIT ("enable-latency-log", priv->latency_log, bool, out);
 	GF_OPTION_INIT ("enable-dir-hash", priv->dir_hash, bool, out);
 
 	/* FIXME: get the brick path */
@@ -929,7 +1066,7 @@ init (xlator_t *this)
 			"FATAL: ims_async_init failed (ret=%d)", ret);
 		goto out;
 	}
-	priv->async_ctx->async_log = priv->async_log;
+	priv->async_ctx->latency_log = priv->latency_log;
 
 	/* we need another db connection */
 	ret = ims_xdb_init (&priv->xdb, priv->db_path, mode);
@@ -1044,11 +1181,10 @@ struct volume_options options [] = {
 	  .description = "Turn on the asynchronous database update "
 			 "to speed up.",
 	},
-	{ .key = { "enable-async-queue-log" },
+	{ .key = { "enable-latency-log" },
 	  .type = GF_OPTION_TYPE_BOOL,
 	  .default_value = "off",
-	  .description = "Log the queue time of the requests in "
-			 "asynchronous mode.",
+	  .description = "Log the latency.",
 	},
 	{ .key = { "enable-dir-hash" },
 	  .type = GF_OPTION_TYPE_BOOL,

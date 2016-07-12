@@ -1517,6 +1517,7 @@ _handle_entry_create_keyvalue_pair (dict_t *d, char *k, data_t *v,
             !strcmp ("gfid-req", k) ||
             !strcmp (POSIX_ACL_DEFAULT_XATTR, k) ||
             !strcmp (POSIX_ACL_ACCESS_XATTR, k) ||
+	    !strcmp ("imess-dht-hashed", k) ||
             ZR_FILE_CONTENT_REQUEST(k)) {
                 return 0;
         }
