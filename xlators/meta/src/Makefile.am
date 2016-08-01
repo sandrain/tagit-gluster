@@ -42,6 +42,7 @@ endif
 meta_la_LIBADD = $(top_builddir)/libglusterfs/src/libglusterfs.la
 
 if ENABLE_IMESS
+meta_la_CFLAGS = $(SQLITE_CFLAGS)
 meta_la_LIBADD += $(SQLITE_LIBS)
 endif
 

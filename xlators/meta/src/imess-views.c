@@ -355,6 +355,6 @@ meta_imess_views_dir_hook (call_frame_t *frame, xlator_t *this, loc_t *loc,
 	meta_ops_set (loc->inode, this, &imess_views_dir_ops);
 	meta_ctx_set (loc->inode, this, (void *) data);
 
-	return 0;
+	return ret;
 }
 

@@ -18,7 +18,7 @@ ixview_LDADD = $(top_builddir)/libglusterfs/src/libglusterfs.la \
 AM_CPPFLAGS = $(GF_CPPFLAGS) -I$(top_srcdir)/libglusterfs/src \
 	      -I$(top_srcdir)/api/src
 
-AM_CFLAGS = -Wall $(GF_CFLAGS)
+AM_CFLAGS = -Wall $(GF_CFLAGS) $(SQLITE_CFLAGS)
 
 EXTRA_DIST = imess-view-db-schema.sql
 
