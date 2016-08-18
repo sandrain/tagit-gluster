@@ -80,7 +80,7 @@ static int read_client_number (glfs_t *fs, char *volname)
 	path = qbuf;
 
 	fd = glfs_opendir (fs, path);
-	if (!fd) {
+	if (fd < 0) {
 		fprintf (stderr, "failed to open %s: %s\n",
 				 path, strerror (errno));
 		return -1;
@@ -118,7 +118,7 @@ print_metadata_fn (dict_t *dict, char *key, data_t *value, void *data)
 		/* no idea, ignore for now. */
 	}
 
-	return 0;
+	return ret;
 }
 
 static inline int print_data (ixsql_query_t *query)
@@ -143,7 +143,7 @@ static inline int print_data (ixsql_query_t *query)
 			fputc('\n', control->fp_output);
 	}
 
-	return 0;
+	return ret;
 }
 
 static inline int64_t print_better_result (ixsql_query_t *query)
