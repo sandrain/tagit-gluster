@@ -52,6 +52,7 @@ static ixsql_control_t *init_control (glfs_t *fs, char *volname,
 	ixsql_control_t *ctl = NULL;
 
 	ctl = malloc (sizeof(*ctl) + sizeof(char)*n_clients);
+	assert(ctl);
 	memset ((void *) ctl, 0, sizeof(*ctl) + sizeof(char)*n_clients);
 
 	if (ctl) {
@@ -217,8 +218,11 @@ static inline int process_sql (char *line)
 	 * we only slice for the select query
 	 * FIXME: this comparison is case-sensitive, cannot catch 'SELECT' or
 	 * 'Select'
+	 * also, if the query is not from tables (e.g., not containing 'from')
+	 * we do not slice the query.
 	 */
 	if (strncasecmp ("select", line, strlen("select"))
+	    || NULL == strstr(line, "from")
 	    || control->slice_count == 0)
 	{
 		ret = ixsql_sql_query (control, &query);
