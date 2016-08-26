@@ -535,6 +535,11 @@ int main(int argc, char **argv)
 	else
 		ret = glfs_set_logging (fs, "/dev/null", 7);
         ret = glfs_init (fs);
+	if (ret < 0) {
+		perror("failed to open the file system");
+		goto out_nolatency;
+	}
+
 	if (null_ops)
 		goto out;
 

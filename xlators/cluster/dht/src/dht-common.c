@@ -7257,13 +7257,12 @@ out:
 int dht_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata)
 {
 	int             ret = 0;
-	char           *clist_str = NULL;
+	char           *cmask = NULL;
         dht_conf_t     *conf = NULL;
 	dht_ipc_data_t *ipc_data = NULL;
 	xlator_t       *subvol = NULL;
         int             i = 0;
         int             call_cnt = 0;
-	int             all = 0;
 
 	if (!xdata)
 		goto call_default;
@@ -7273,21 +7272,13 @@ int dht_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata)
 
         conf = this->private;
 
-	ret = dict_get_str (xdata, "clients", &clist_str);
+	ret = dict_get_bin (xdata, "cmask", (void **) &cmask);
 	if (ret)
 		goto call_default;
 
-	if (strcmp(clist_str, "all") == 0) {
-		all = 1;
-		call_cnt = conf->subvolume_cnt;
-	}
-	else {
-		for (i = 0; i < conf->subvolume_cnt; i++) {
-			subvol = conf->subvolumes[i];
-			if (!gf_strstr(clist_str, ",", subvol->name))
-				call_cnt++;
-		}
-	}
+	for (i = 0; i < conf->subvolume_cnt; i++)
+		if (cmask[i])
+			call_cnt++;
 
 	ipc_data = CALLOC (1, sizeof (*ipc_data));
 	if (!ipc_data)
@@ -7308,10 +7299,10 @@ int dht_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata)
 	}
 
 	for (i = 0; i < conf->subvolume_cnt; i++) {
-		subvol = conf->subvolumes[i];
-		if (!all && gf_strstr(clist_str, ",", subvol->name))
+		if (!cmask[i])
 			continue;
 
+		subvol = conf->subvolumes[i];
 		STACK_WIND_COOKIE (frame, dht_ipc_cbk, (void *) ipc_data,
 				   subvol, subvol->fops->ipc, op, xdata);
 	}

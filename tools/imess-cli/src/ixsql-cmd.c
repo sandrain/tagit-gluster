@@ -234,14 +234,11 @@ process_control_cmd (ixsql_control_t *ctl, int argc, char **argv)
 int ixsql_sql_query (ixsql_control_t *ctl, ixsql_query_t *query)
 {
         int ret               = 0;
-	int i                 = 0;
 	glfs_t *fs            = NULL;
         dict_t *cmd           = NULL;
         dict_t *result        = NULL;
         struct timeval before = { 0, };
         struct timeval after  = { 0, };
-	char *pos             = NULL;
-	char buf[1024]        = { 0, };
 
 	fs = ctl->gluster;
 
@@ -253,25 +250,18 @@ int ixsql_sql_query (ixsql_control_t *ctl, ixsql_query_t *query)
 
 	ret = dict_set_str (cmd, "type", "query");
 	ret = dict_set_str (cmd, "sql", query->sql);
+	if (ret)
+		goto out;
 
 	if (ctl->active_clients <= 0) {
 		fprintf (ctl->fp_output, "no active clients set.\n");
 		goto out;
 	}
-	else if (ctl->active_clients == ctl->num_clients)
-		ret = dict_set_str (cmd, "clients", "all");
-	else {
-		pos = buf;
-		for (i = 0; i < ctl->num_clients; i++) {
-			if (!ctl->cli_mask[i])
-				continue;
 
-			pos += sprintf (pos, "%s-client-%d,", ctl->volname, i);
-		}
-		buf[strlen(buf) - 1] = '\0';	/* remove the final ',' */
-
-		ret = dict_set_str (cmd, "clients", buf);
-	}
+	ret = dict_set_static_bin (cmd, "cmask", ctl->cli_mask,
+				   ctl->num_clients);
+	if (ret)
+		goto out;
 
         gettimeofday (&before, NULL);
 
