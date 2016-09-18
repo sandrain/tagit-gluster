@@ -308,11 +308,18 @@ int ixsql_exec (ixsql_control_t *ctl, ixsql_query_t *query)
 	ret  = dict_set_str (cmd, "type", typestr);
 	ret |= dict_set_str (cmd, "sql", query->sql);
 	ret |= dict_set_str (cmd, "operator", query->operator);
+
+	/*
 	ret |= dict_set_str (cmd, "clients", "all");
 	if (ret) {
 		fprintf (stderr, "dict_set_str failed (%d)\n", ret);
 		goto out;
 	}
+	*/
+	ret = dict_set_static_bin (cmd, "cmask", ctl->cli_mask,
+			           ctl->num_clients);
+	if (ret)
+		goto out;
 
 	gettimeofday (&before, NULL);
 
