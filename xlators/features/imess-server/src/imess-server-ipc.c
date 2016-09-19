@@ -454,7 +454,8 @@ out:
  */
 
 int32_t
-ims_ipc_query (xlator_t *this, dict_t *xdata_in, dict_t *xdata_out, int *err)
+ims_ipc_query_stateless (xlator_t *this, dict_t *xdata_in, dict_t *xdata_out,
+		         int *err)
 {
 	int op_ret             = -1;
 	int op_errno           = 0;
@@ -495,18 +496,15 @@ out:
 	return op_ret;
 }
 
-#if 0
-int32_t
-ims_ipc_exec (xlator_t *this, dict_t *xdata_in, dict_t *xdata_out, int *err)
+static int32_t
+ims_ipc_new_query (xlator_t *this, dict_t *xdata_in, dict_t *qres, int *err)
 {
-	int op_ret             = -1;
+	int ret                = -1;
 	int op_errno           = 0;
 	char *sql              = NULL;
-	char *operator         = NULL;
-	uint64_t count         = 0;
+	char *session          = NULL;
 	ims_priv_t *priv       = NULL;
 	ims_xdb_t *xdb         = NULL;
-	dict_t *xfiles         = NULL;
 	struct timeval before  = { 0, };
 	struct timeval after   = { 0, };
 	double latency         = .0F;
@@ -514,96 +512,164 @@ ims_ipc_exec (xlator_t *this, dict_t *xdata_in, dict_t *xdata_out, int *err)
 	priv = this->private;
 	xdb = priv->xdb;
 
-	op_ret = dict_get_str (xdata_in, "sql", &sql);
-	if (op_ret) {
+	ret = dict_get_str (xdata_in, "sql", &sql);
+	ret |= dict_get_str (xdata_in, "session", &session);
+	if (ret) {
 		gf_log (this->name, GF_LOG_WARNING,
-			"ims_ipc_exec: IPC extractor request: "
-			"no sql in xdata.");
+			"ims_ipc: no sql/session in xdata.");
 		op_errno = EINVAL;
 		goto out;
 	}
 
-	op_ret = dict_get_str (xdata_in, "operator", &operator);
-	if (op_ret) {
-		gf_log (this->name, GF_LOG_WARNING,
-			"ims_ipc_exec: IPC extractor request: "
-			"no operator in xdata.");
-		op_errno = EINVAL;
-		goto out;
-	}
+	gettimeofday (&before, NULL);
 
-	xfiles = dict_new ();
-	if (xfiles == NULL) {
+	ret = ims_xdb_direct_query (xdb, sql, qres);
+	if (ret) {
 		gf_log (this->name, GF_LOG_WARNING,
-			"ims_ipc_exec: dict_new () failed.\n");
-		op_errno = ENOMEM;
-		goto out;
-	}
-
-	/*
-	 * get the list of files that we need to work with
-	 */
-	op_ret = ims_xdb_direct_query (xdb, sql, xfiles);
-	if (op_ret) {
-		gf_log (this->name, GF_LOG_WARNING,
-			"ims_ipc_exec: query failed: db_ret=%d (%s).",
+			"ims_ipc: direct query failed: db_ret=%d (%s).",
 			xdb->db_ret, ims_xdb_errstr (xdb->db_ret));
 		op_errno = EIO;
 		goto out;
 	}
 
-	op_ret = dict_get_uint64 (xfiles, "count", &count);
+	gettimeofday (&after, NULL);
+	latency = timegap_double (&before, &after);
+
+	ret = dict_set_double (qres, "runtime", latency);
+	if (ret) {
+		gf_log (this->name, GF_LOG_WARNING,
+			"ims_ipc: dict_set failed: ret=%d.",
+			ret);
+		op_errno = EIO;
+		goto out;
+	}
+
+	ret = ims_xdb_register_result (xdb, session, qres);
+	if (ret) {
+		gf_log (this->name, GF_LOG_WARNING,
+			"ims_ipc_new_query: ims_xdb_register_result failed: "
+			"ret=%d.\n", ret);
+		op_errno = EIO;
+		goto out;
+	}
+
+out:
+	*err = op_errno;
+	return ret;
+}
+
+static int
+ims_ipc_process_query_result (ims_xdb_t *xdb, dict_t *qres, dict_t *xdata,
+			      uint64_t offset, uint64_t count)
+{
+	int ret = 0;
+	uint64_t i = 0;
+	uint64_t total = 0;
+	uint64_t current = 0;
+	int32_t comeback = 1;
+	char *row = NULL;
+	char key[20] = { 0, };
+
+	ret = dict_get_uint64 (qres, "count", &total);
+	if (ret)
+		goto out;
+
+	for (i = 0; i < count; i++) {
+		current = offset + i;
+		sprintf(key, "%llu", _llu(current));
+		ret = dict_get_str (qres, key, &row);
+		if (ret)
+			break;
+
+		sprintf(key, "%llu", _llu(i));
+		ret |= dict_set_dynstr (xdata, key, row);
+		if (ret)
+			goto out;
+	}
+
+	if (offset + i >= total) {	/* all results are processed */
+		dict_del (xdb->qrset, key);
+		comeback = 0;
+	}
+
+	ret = dict_set_uint64 (xdata, "count", i);
+	ret |= dict_set_int32 (xdata, "ret", ret);
+	ret |= dict_set_int32 (xdata, "comeback", comeback);
+out:
+	return ret;
+}
+
+int32_t
+ims_ipc_query (xlator_t *this, dict_t *xdata_in, dict_t *xdata_out, int *err)
+{
+	int op_ret             = -1;
+	int op_errno           = 0;
+	uint64_t offset        = 0;
+	uint64_t count         = 0;
+	char *session          = NULL;
+	ims_priv_t *priv       = NULL;
+	ims_xdb_t *xdb         = NULL;
+	dict_t *query_result   = NULL;
+	struct timeval before  = { 0, };
+	struct timeval after   = { 0, };
+	double latency         = .0F;
+
+	priv = this->private;
+	xdb = priv->xdb;
+
+	gettimeofday(&before, NULL);
+
+	op_ret = dict_get_str (xdata_in, "session", &session);
 	if (op_ret) {
 		gf_log (this->name, GF_LOG_WARNING,
-			"ims_ipc_exec: dict_get_uint64 failed.");
+			"ims_ipc_query: @session not found.\n");
 		op_errno = EINVAL;
 		goto out;
 	}
 
-	if (!count) {
-		op_ret = dict_set_int32 (xdata_out, "ret", 0);
-		op_ret = dict_set_uint64 (xdata_out, "count", 0);
-
-		goto done;
+	op_ret = dict_get_uint64 (xdata_in, "offset", &offset);
+	op_ret |= dict_get_uint64 (xdata_in, "count", &count);
+	if (op_ret) {
+		gf_log (this->name, GF_LOG_WARNING,
+			"ims_ipc_query: no @offset/@count in xdata.");
+		op_errno = EINVAL;
+		goto out;
 	}
 
-	/*
-	 * TODO: async worker??
-	 * currently, we work synchronously.
-	 */
+	query_result = ims_xdb_get_result (xdb, session);
+	if (!query_result) {
+		query_result = dict_new();
+		if (query_result == NULL) {
+			gf_log (this->name, GF_LOG_WARNING,
+				"ims_ipc_query: dict_new () failed.\n");
+			op_errno = ENOMEM;
+			goto out;
+		}
 
-	gettimeofday (&before, NULL);
+		op_ret = ims_ipc_new_query (this, xdata_in, query_result, err);
+		if (op_ret) {
+			gf_log (this->name, GF_LOG_WARNING,
+				"ims_ipc_new_query failed: ret=%d.\n",
+				op_ret);
+			goto out;
+		}
+	}
 
-	op_ret = ipc_exec_work_files (this, operator, xfiles,
-				      xdata_out, &op_errno);
-	if (op_ret)
+	op_ret = ims_ipc_process_query_result (xdb, query_result, xdata_out,
+					       offset, count);
+	if (op_ret) {
 		gf_log (this->name, GF_LOG_WARNING,
-			"ims_ipc_exec: execution failed (ret=%d, errno=%d)",
-			op_ret, op_errno);
+			"ims_ipc_query: ims_ipc_process_query_result failed.");
+		goto out;
+	}
 
-	gettimeofday (&after, NULL);
-
+	gettimeofday(&after, NULL);
 	latency = timegap_double (&before, &after);
-done:
+
 	op_ret = dict_set_double (xdata_out, "runtime", latency);
+
 out:
 	*err = op_errno;
-	if (xfiles)
-		dict_unref (xfiles);
 	return op_ret;
 }
-
-
-int32_t
-ims_ipc_filter (xlator_t *this, dict_t *xdata_in, dict_t *xdata_out, int *err)
-{
-	return 0;
-}
-
-int32_t
-ims_ipc_extractor (xlator_t *this, dict_t *xdata_in, dict_t *xdata_out, int *err)
-{
-	return 0;
-}
-#endif
 

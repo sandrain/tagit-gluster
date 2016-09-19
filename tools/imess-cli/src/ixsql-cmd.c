@@ -249,7 +249,10 @@ int ixsql_sql_query (ixsql_control_t *ctl, ixsql_query_t *query)
 	}
 
 	ret = dict_set_str (cmd, "type", "query");
-	ret = dict_set_str (cmd, "sql", query->sql);
+	ret = dict_set_str (cmd, "session", query->session_id);
+	ret |= dict_set_str (cmd, "sql", query->sql);
+	ret |= dict_set_uint64 (cmd, "offset", query->offset);
+	ret |= dict_set_uint64 (cmd, "count", query->count);
 	if (ret)
 		goto out;
 

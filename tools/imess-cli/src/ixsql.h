@@ -73,7 +73,9 @@ struct _ixsql_query {
 	dict_t         *result;
 	char           *operator;
 	int		type;
+	uint64_t        offset;
 	uint64_t        count;
+	char           *session_id;
 	struct timeval  latency;
 };
 

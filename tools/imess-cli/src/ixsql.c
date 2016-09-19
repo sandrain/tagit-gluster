@@ -17,6 +17,8 @@
 #include <unistd.h>
 #include <readline/readline.h>
 #include <readline/history.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "ixsql.h"
 
@@ -25,6 +27,19 @@
 static int verbose;
 static ixsql_control_t  *control;
 static char qbuf[4096];
+
+static char ixsql_hostname[512];
+static pid_t ixsql_pid;
+static uint64_t ixsql_seq;
+
+static char ixsql_session_id[1024];
+
+static inline char *ixsql_new_session_id (void)
+{
+	sprintf (ixsql_session_id, "%s:%d:%llu",
+			ixsql_hostname, ixsql_pid, _llu(ixsql_seq++));
+	return ixsql_session_id;
+}
 
 /* NOTE: don't do slicing for the active executions */
 static char *operator;
@@ -137,6 +152,8 @@ static inline int print_data (ixsql_query_t *query)
 	for (i = 0; i < count; i++) {
 		sprintf (keybuf, "%llu", _llu (i));
                 ret = dict_get_str (result, keybuf, &row);
+		if (ret)
+			goto out;
 
 		/* put the '\n' if it doesn't have already */
 		fputs (row, control->fp_output);
@@ -144,6 +161,7 @@ static inline int print_data (ixsql_query_t *query)
 			fputc('\n', control->fp_output);
 	}
 
+out:
 	return ret;
 }
 
@@ -181,10 +199,41 @@ static inline int process_sql_sliced (ixsql_query_t *query)
 	int offset             = 0;
 	int count              = 0;
 	int64_t res_count      = 0;
+	char *session          = NULL;
+	int32_t comeback       = 0;
 	ixsql_query_t my_query = { 0, };
 
 	count = control->slice_count;
 
+	/**
+	 * FIXME:!!!
+	 */
+	session = ixsql_new_session_id ();
+
+	do {
+		my_query.offset = offset;
+		my_query.count = count;
+		my_query.session_id = session;
+
+		my_query.sql = query->sql;
+		ret = ixsql_sql_query (control, &my_query);
+		if (ret)
+			goto out;
+
+		res_count = print_better_result (&my_query);
+		if (res_count == -1)
+			goto out;
+
+		ret = dict_get_int32 (my_query.result, "comeback", &comeback);
+		if (ret)
+			goto out;
+
+		if (comeback == 0)
+			break;
+
+		offset += count;
+	} while (res_count > 0);
+#if 0
 	do {
 		sprintf (qbuf, "%s limit %d,%d", query->sql, offset, count);
 
@@ -199,6 +248,7 @@ static inline int process_sql_sliced (ixsql_query_t *query)
 
 		offset += count;
 	} while (res_count > 0);
+#endif
 
 out:
 	if (my_query.result)
@@ -222,8 +272,7 @@ static inline int process_sql (char *line)
 	 * we do not slice the query.
 	 */
 	if (strncasecmp ("select", line, strlen("select"))
-	    || NULL == strstr(line, "from")
-	    || control->slice_count == 0)
+	    || NULL == strstr(line, "from"))
 	{
 		ret = ixsql_sql_query (control, &query);
 		if (ret)
@@ -528,6 +577,9 @@ int main(int argc, char **argv)
 		direct = 1;
 		mute = 1;
 	}
+
+	ixsql_pid = getpid();
+	gethostname(ixsql_hostname, 512);
 
         ret = glfs_set_volfile_server (fs, "tcp", argv[1], 24007);
 	if (print_debug)

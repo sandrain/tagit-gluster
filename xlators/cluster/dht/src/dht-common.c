@@ -7178,6 +7178,8 @@ int32_t dht_ipc_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	data_t        *data          = NULL;
 	uint64_t       xcnt          = 0;
 	char          *xlname        = NULL;
+	int32_t        comeback      = 0;
+	int32_t        xcomeback     = 0;
 	int32_t        db_ret        = 0;
 	uint64_t       count         = 0;
 	double         runtime       = .0F;
@@ -7199,6 +7201,7 @@ int32_t dht_ipc_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	ret |= dict_get_int32 (xdata, "ret", &db_ret);
 	ret |= dict_get_str (xdata, "from", &xlname);
 	ret |= dict_get_double (xdata, "runtime", &runtime);
+	ret |= dict_get_int32 (xdata, "comeback", &xcomeback);
 	if (ret)
 		goto out;
 
@@ -7220,6 +7223,15 @@ int32_t dht_ipc_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 			goto unlock;
 
 		ret = dict_set_uint64 (dict_req, "count", count + xcnt);
+		if (ret)
+			goto unlock;
+
+		ret = dict_get_int32 (dict_req, "comeback", &comeback);
+		if (ret)
+			goto unlock;
+
+		ret = dict_set_uint64 (dict_req, "comeback",
+						comeback + xcomeback);
 		if (ret)
 			goto unlock;
 
@@ -7293,6 +7305,12 @@ int dht_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata)
 	LOCK_INIT (&ipc_data->lock);
 
 	ret = dict_set_uint64 (ipc_data->xdata, "count", 0);
+	if (ret) {
+		dict_unref (ipc_data->xdata);
+		goto err;
+	}
+
+	ret = dict_set_int32 (ipc_data->xdata, "comeback", 0);
 	if (ret) {
 		dict_unref (ipc_data->xdata);
 		goto err;

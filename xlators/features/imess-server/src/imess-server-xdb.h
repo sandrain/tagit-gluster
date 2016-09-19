@@ -22,6 +22,8 @@
 #include "common-utils.h"
 #include "dict.h"
 
+#define _llu(x)		((unsigned long long) (x))
+
 enum {
         IMS_XDB_TYPE_NONE       = 0,
         IMS_XDB_TYPE_INTEGER,
@@ -62,9 +64,11 @@ enum {
 };
 
 struct _ims_xdb {
-        sqlite3        *conn;       /* connection to the SQLite */
-        int             db_ret;     /* return value from SQLite */
-	int		mode;       /* 0: SYNC, 1: ASYNC */
+        sqlite3        *conn;    /* connection to the SQLite */
+        int             db_ret;  /* return value from SQLite */
+	int		mode;    /* 0: SYNC, 1: ASYNC */
+
+	dict_t         *qrset;   /* query result set for stateful processing */
 };
 
 typedef struct _ims_xdb	ims_xdb_t;
@@ -211,6 +215,35 @@ int ims_xdb_direct_query (ims_xdb_t *xdb, const char *sql, dict_t *xdata);
 static inline const char *ims_xdb_errstr (int errcode)
 {
 	return sqlite3_errstr (errcode);
+}
+
+static inline
+int ims_xdb_register_result (ims_xdb_t *xdb, char *key, dict_t *result)
+{
+	int ret = -1;
+
+	__valptr(xdb, out);
+	__valptr(result, out);
+	__valptr(key, out);
+
+	ret = dict_set_static_ptr (xdb->qrset, key, (void *) result);
+out:
+	return ret;
+}
+
+static inline dict_t *ims_xdb_get_result (ims_xdb_t *xdb, char *key)
+{
+	int ret = 0;
+	void *result = NULL;
+
+	__valptr(xdb, out);
+	__valptr(key, out);
+
+	ret = dict_get_ptr (xdb->qrset, key, &result);
+	if (ret)
+		result = NULL;
+out:
+	return (dict_t *) result;
 }
 
 #endif

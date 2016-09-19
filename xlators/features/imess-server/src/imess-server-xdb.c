@@ -333,12 +333,20 @@ int ims_xdb_init (ims_xdb_t **self, const char *db_path, int mode)
 	int ret         = -1;
 	sqlite3 *conn   = NULL;
 	ims_xdb_t *_self = NULL;
+	dict_t *result  = NULL;
 
 	__valptr (db_path, out);
 
 	_self = GF_CALLOC (1, sizeof(*_self), gf_ims_mt_ims_xdb_t);
 	if (!_self)
 		goto out;
+
+	result = dict_new ();
+	if (!result) {
+		ret = -1;
+		errno = ENOMEM;
+		goto out;
+	}
 
 #if 0
 	if (mode == XDB_MODE_READONLY)
@@ -356,6 +364,7 @@ int ims_xdb_init (ims_xdb_t **self, const char *db_path, int mode)
 
 	_self->conn = conn;
 	_self->mode = mode;
+	_self->qrset = result;
 
 	ret = db_initialize (_self);
 	if (ret)
@@ -376,6 +385,9 @@ int ims_xdb_exit (ims_xdb_t *self)
 	if (self) {
 		if (self->conn)
 			sqlite3_close (self->conn);
+
+		if (self->qrset)
+			dict_destroy (self->qrset);
 		GF_FREE (self);
 	}
 
