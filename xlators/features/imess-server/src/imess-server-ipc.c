@@ -535,7 +535,7 @@ ims_ipc_new_query (xlator_t *this, dict_t *xdata_in, dict_t *qres, int *err)
 	gettimeofday (&after, NULL);
 	latency = timegap_double (&before, &after);
 
-	ret = dict_set_double (qres, "runtime", latency);
+	ret = dict_set_double (qres, "dbtime", latency);
 	if (ret) {
 		gf_log (this->name, GF_LOG_WARNING,
 			"ims_ipc: dict_set failed: ret=%d.",
@@ -567,12 +567,24 @@ ims_ipc_process_query_result (ims_xdb_t *xdb, dict_t *qres, dict_t *xdata,
 	uint64_t total = 0;
 	uint64_t current = 0;
 	int32_t comeback = 1;
+	double dbtime = 0.0F;
 	char *row = NULL;
 	char key[20] = { 0, };
 
 	ret = dict_get_uint64 (qres, "count", &total);
 	if (ret)
 		goto out;
+
+	if (offset == 0) {
+		/* include the database latency for the first fetch */
+		ret = dict_get_double (qres, "dbtime", &dbtime);
+		if (ret)
+			goto out;
+
+		ret = dict_set_double (xdata, "dbtime", dbtime);
+		if (ret)
+			goto out;
+	}
 
 	for (i = 0; i < count; i++) {
 		current = offset + i;

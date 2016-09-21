@@ -7183,6 +7183,7 @@ int32_t dht_ipc_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	int32_t        db_ret        = 0;
 	uint64_t       count         = 0;
 	double         runtime       = .0F;
+	double         dbtime        = .0F;
 	char           keybuf[64]    = {0,};
 
         GF_VALIDATE_OR_GOTO ("dht", frame, out);
@@ -7205,6 +7206,8 @@ int32_t dht_ipc_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	if (ret)
 		goto out;
 
+	ret = dict_get_double (xdata, "dbtime", &dbtime);
+
 	dict_req = ipc_data->xdata;
 
 	LOCK (&ipc_data->lock);
@@ -7216,6 +7219,13 @@ int32_t dht_ipc_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 			sprintf(keybuf, "%llu",
 				(unsigned long long) ipc_data->pos++);
 			dict_set (dict_req, keybuf, data);
+		}
+
+		if (dbtime > 0.0F) {
+			sprintf (keybuf, "%s:dbtime", xlname);
+			ret = dict_set_double (dict_req, keybuf, dbtime);
+			if (ret)
+				goto unlock;
 		}
 
 		ret = dict_get_uint64 (dict_req, "count", &count);

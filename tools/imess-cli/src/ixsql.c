@@ -113,22 +113,33 @@ print_metadata_fn (dict_t *dict, char *key, data_t *value, void *data)
 {
 	int ret        = 0;
 	int32_t op_ret = 0;
+	int32_t comeback = 0;
 	uint64_t count = 0;
 	double runtime = .0F;
+	double dbtime  = .0F;
 	char *pos      = NULL;
+	FILE *out      = stderr;
 
 	if (NULL != (pos = strstr (key, ":ret"))) {
 		op_ret = data_to_int32 (value);
-		fprintf (control->fp_output, "## %s = %d\n", key, op_ret);
+		fprintf (out, "## %s = %d\n", key, op_ret);
 	}
 	else if (NULL != (pos = strstr (key, ":count"))) {
 		count = data_to_uint64 (value);
-		fprintf (control->fp_output, "## %s = %llu\n",
+		fprintf (out, "## %s = %llu\n",
 					     key, _llu (count));
 	}
 	else if (NULL != (pos = strstr (key, ":runtime"))) {
 		ret = dict_get_double (dict, key, &runtime);
-		fprintf (control->fp_output, "## %s = %.6f\n", key, runtime);
+		fprintf (out, "## %s = %.6f\n", key, runtime);
+	}
+	else if (NULL != (pos = strstr (key, ":dbtime"))) {
+		ret = dict_get_double (dict, key, &dbtime);
+		fprintf (out, "## %s = %.6f\n", key, dbtime);
+	}
+	else if (NULL != (pos = strstr (key, ":comeback"))) {
+		ret = dict_get_int32 (dict, key, &comeback);
+		fprintf (out, "## %s = %d\n", key, comeback);
 	}
 	else {
 		/* no idea, ignore for now. */
@@ -228,11 +239,8 @@ static inline int process_sql_sliced (ixsql_query_t *query)
 		if (ret)
 			goto out;
 
-		if (comeback == 0)
-			break;
-
 		offset += count;
-	} while (res_count > 0);
+	} while (comeback > 0);
 #if 0
 	do {
 		sprintf (qbuf, "%s limit %d,%d", query->sql, offset, count);
