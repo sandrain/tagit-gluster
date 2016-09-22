@@ -87,8 +87,10 @@ struct _ixsql_control {
 	FILE            *fp_output;
 	int              show_latency;
 	uint64_t         slice_count;
+	uint64_t         repeat;
 	uint32_t         num_clients;
 	int              active_clients;
+	int              mute;
 	char            *volname;
 	char            *volserver;
 	char             cli_mask[0];		/* client mask: 1 active */

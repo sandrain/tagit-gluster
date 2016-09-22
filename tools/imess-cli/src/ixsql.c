@@ -49,6 +49,8 @@ static struct timeval before;
 static struct timeval after;
 static struct timeval latency;
 
+static double *repeat_latency;
+
 static void sig_handler (int signal)
 {
 	if (signal == SIGALRM)
@@ -118,7 +120,7 @@ print_metadata_fn (dict_t *dict, char *key, data_t *value, void *data)
 	double runtime = .0F;
 	double dbtime  = .0F;
 	char *pos      = NULL;
-	FILE *out      = stderr;
+	FILE *out      = stdout;
 
 	if (NULL != (pos = strstr (key, ":ret"))) {
 		op_ret = data_to_int32 (value);
@@ -146,6 +148,16 @@ print_metadata_fn (dict_t *dict, char *key, data_t *value, void *data)
 	}
 
 	return ret;
+}
+
+static int
+update_result_count_fn (dict_t *dict, char *key, data_t *value, void *data)
+{
+	ixsql_query_t *query = (ixsql_query_t *) data;
+
+	query->count += data_to_uint64 (value);
+
+	return 0;
 }
 
 static inline int print_data (ixsql_query_t *query)
@@ -188,13 +200,13 @@ static inline int64_t print_better_result (ixsql_query_t *query)
 	if (ret)
 		goto err;
 
-	query->count = count;
-
-	if (verbose)
+	if (verbose) {
 		ret = dict_foreach_fnmatch (result, "*:*",
 					    print_metadata_fn, query);
+	}
 
-	ret = print_data (query);
+	if (!control->mute)
+		ret = print_data (query);
 err:
 	if (ret)
 		ret = -1;
@@ -231,6 +243,9 @@ static inline int process_sql_sliced (ixsql_query_t *query)
 		if (ret)
 			goto out;
 
+		ret = dict_foreach_fnmatch (my_query.result, "*:count",
+				            update_result_count_fn, &my_query);
+
 		res_count = print_better_result (&my_query);
 		if (res_count == -1)
 			goto out;
@@ -241,22 +256,6 @@ static inline int process_sql_sliced (ixsql_query_t *query)
 
 		offset += count;
 	} while (comeback > 0);
-#if 0
-	do {
-		sprintf (qbuf, "%s limit %d,%d", query->sql, offset, count);
-
-		my_query.sql = qbuf;
-		ret = ixsql_sql_query (control, &my_query);
-		if (ret)
-			goto out;
-
-		res_count = print_better_result (&my_query);
-		if (res_count == -1)
-			goto out;
-
-		offset += count;
-	} while (res_count > 0);
-#endif
 
 out:
 	if (my_query.result)
@@ -295,6 +294,34 @@ out:
                 dict_destroy (query.result);
 
         return ret;
+}
+
+static int process_sql_repeat (char *sql)
+{
+        int ret                 = 0;
+	uint64_t i              = 0;
+	struct timeval t_before = { 0, };
+	struct timeval t_after  = { 0, };
+	struct timeval t_lat    = { 0, };
+	double elapsed          = 0.0F;
+
+	for (i = 0; i < control->repeat; i++) {
+		gettimeofday(&t_before, NULL);
+
+		process_sql (sql);
+
+		gettimeofday(&t_after, NULL);
+
+		timeval_latency (&t_lat, &t_before, &t_after);
+		elapsed = timeval_to_sec (&t_lat);
+
+		repeat_latency[i] = elapsed;
+	}
+
+	for (i = 0; i < control->repeat; i++)
+		printf("## [%3llu]: %.6f\n", _llu(i), repeat_latency[i]);
+
+	return ret;
 }
 
 static inline int process_exec (char *line, int type)
@@ -492,6 +519,7 @@ int main(int argc, char **argv)
 	int n_clients         = 0;
 	int n_test_clients    = 0;
 	uint64_t slice_count  = IXSQL_DEFAULT_SLICE;
+	uint64_t repeat       = 0;
 	int client            = -1;
 	char *sql             = NULL;
 	char *sql_file        = NULL;
@@ -500,7 +528,7 @@ int main(int argc, char **argv)
 	double elapsed_sec    = 0.0F;
 
 	while ((op = getopt_long (argc, argv,
-				  "b:c:df:hilmn:q:s:vV:x:z",
+				  "b:c:df:hilmn:q:r:s:vV:x:z",
 				  opts, NULL)) != -1)
 	{
 		switch (op) {
@@ -533,7 +561,10 @@ int main(int argc, char **argv)
 			sql = sql_file ? NULL : optarg;
 			break;
 		case 's':
-			slice_count = (uint64_t ) strtoul (optarg, NULL, 0);
+			slice_count = (uint64_t) strtoul (optarg, NULL, 0);
+			break;
+		case 'r':
+			repeat = (uint64_t) strtoul (optarg, NULL, 0);
 			break;
 		case 'V':
 			view = 1;
@@ -609,6 +640,7 @@ int main(int argc, char **argv)
 	assert (control);
 
 	if (mute) {
+		control->mute = 1;
 		control->fp_output = fopen("/dev/null", "w");
 		assert(control->fp_output);
 	}
@@ -618,6 +650,15 @@ int main(int argc, char **argv)
 	control->slice_count = slice_count;
 	control->show_latency = show_latency;
 	control->direct = direct;
+	control->repeat = repeat;
+
+	if (repeat > 0) {
+		repeat_latency = calloc(repeat, sizeof(double));
+		if (NULL == repeat_latency) {
+			perror("memory allocation failed");
+			goto out_nolatency;
+		}
+	}
 
 	if (client >= 0) {
 		sprintf (qbuf, ".client none\n");
@@ -652,8 +693,18 @@ int main(int argc, char **argv)
 		}
 
 		gettimeofday (&after, NULL);
-		timeval_latency (&latency, &before, &after);
-		elapsed_sec = timeval_to_sec (&latency);
+	}
+	else if (repeat > 0) {
+		gettimeofday (&before, NULL);
+
+		ret = process_sql_repeat (sql);
+
+		if (ret)
+			goto out;
+
+		gettimeofday (&after, NULL);
+		count = repeat;
+
 	}
 	else if (direct) {
 		if (view) {
@@ -678,19 +729,21 @@ int main(int argc, char **argv)
 			process_sql (sql);
 
 		gettimeofday (&after, NULL);
-		timeval_latency (&latency, &before, &after);
-		elapsed_sec = timeval_to_sec (&latency);
 	}
 	else
 		ixsql_shell ();
 
 out:
-	if (direct && show_latency)
+	if (repeat > 0 || (direct && show_latency)) {
+		timeval_latency (&latency, &before, &after);
+		elapsed_sec = timeval_to_sec (&latency);
+
 		fprintf (stdout,
 			 "## %llu queries were processed in "
 			 "%.3f sec (%.3lf ops/sec)\n",
 			 _llu (count),
 			 elapsed_sec, 1.0 * count / elapsed_sec);
+	}
 
 out_nolatency:
         glfs_fini (fs);
