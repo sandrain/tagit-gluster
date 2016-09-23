@@ -49,7 +49,8 @@ static struct timeval before;
 static struct timeval after;
 static struct timeval latency;
 
-static double *repeat_latency;
+static int latency_idx;
+static double *slice_latency;
 
 static void sig_handler (int signal)
 {
@@ -111,6 +112,44 @@ static int read_client_number (glfs_t *fs, char *volname)
 }
 
 static int
+process_result_count_fn (dict_t *dict, char *key, data_t *value, void *data)
+{
+	uint64_t count       = 0;
+	uint64_t *res_count  = (uint64_t *) data;
+
+	count = data_to_uint64 (value);
+	*res_count = *res_count + count;
+
+	return 0;
+}
+
+
+static int
+process_latency_fn (dict_t *dict, char *key, data_t *value, void *data)
+{
+	int i = 0;
+	int ret = 0;
+	double latency = .0F;
+
+	ret = dict_get_double (dict, key, &latency);
+	if (0 == ret) {
+		slice_latency[latency_idx++] = latency;
+
+		if (latency_idx == control->num_clients) {
+			printf("## ===== ");
+			for (i = 0; i < control->num_clients; i++) {
+				printf("%.6f%c", slice_latency[i],
+					i+1 == control->num_clients ?'\n' : ',');
+			}
+
+			latency_idx = 0;
+		}
+	}
+
+	return ret;
+}
+
+static int
 process_metadata_fn (dict_t *dict, char *key, data_t *value, void *data)
 {
 	int ret              = 0;
@@ -121,7 +160,6 @@ process_metadata_fn (dict_t *dict, char *key, data_t *value, void *data)
 	double dbtime        = .0F;
 	char *pos            = NULL;
 	FILE *out            = stdout;
-	uint64_t *res_count  = (uint64_t *) data;
 
 	if (NULL != (pos = strstr (key, ":ret"))) {
 		op_ret = data_to_int32 (value);
@@ -130,7 +168,6 @@ process_metadata_fn (dict_t *dict, char *key, data_t *value, void *data)
 	}
 	else if (NULL != (pos = strstr (key, ":count"))) {
 		count = data_to_uint64 (value);
-		*res_count = *res_count + count;
 		if (verbose)
 			fprintf (out, "## %s = %llu\n", key, _llu (count));
 	}
@@ -155,18 +192,6 @@ process_metadata_fn (dict_t *dict, char *key, data_t *value, void *data)
 
 	return ret;
 }
-
-#if 0
-static int
-update_result_count_fn (dict_t *dict, char *key, data_t *value, void *data)
-{
-	ixsql_query_t *query = (ixsql_query_t *) data;
-
-	query->count += data_to_uint64 (value);
-
-	return 0;
-}
-#endif
 
 static inline int print_data (ixsql_query_t *query)
 {
@@ -249,6 +274,7 @@ static inline int process_sql_sliced (ixsql_query_t *query)
 	uint64_t res_count     = 0;
 	char *session          = NULL;
 	int32_t comeback       = 0;
+	dict_t *result         = NULL;
 	ixsql_query_t my_query = { 0, };
 
 	count = control->slice_count;
@@ -268,32 +294,36 @@ static inline int process_sql_sliced (ixsql_query_t *query)
 		if (ret)
 			goto out;
 
-		ret = dict_foreach_fnmatch (my_query.result, "*:*",
-					    process_metadata_fn, &res_count);
+		result = my_query.result;
+
+		ret = dict_foreach_fnmatch (result, "*:count",
+					    process_result_count_fn,
+					    &res_count);
 		if (!ret) {
 			ret = -1;
 			goto out;
 		}
 		ret = 0;
 
-		if (!control->mute) {
-			ret = print_query_result (my_query.result, res_count);
-#if 0
-			ret = dict_foreach_fnmatch (my_query.result, "*:count",
-						    update_result_count_fn,
-						    &my_query);
+		if (control->repeat) {
+			ret = dict_foreach_fnmatch (result, "*:latency", 
+					    process_latency_fn, NULL);
+		}
+
+		if (verbose) {
+			ret = dict_foreach_fnmatch (result, "*:*",
+					    process_metadata_fn, NULL);
 			if (!ret) {
 				ret = -1;
 				goto out;
 			}
 			ret = 0;
-			res_count = print_better_result (&my_query);
-			if (res_count == -1)
-				goto out;
-#endif
 		}
 
-		ret = dict_get_int32 (my_query.result, "comeback", &comeback);
+		if (!control->mute)
+			ret = print_query_result (result, res_count);
+
+		ret = dict_get_int32 (result, "comeback", &comeback);
 		if (ret)
 			goto out;
 
@@ -358,11 +388,8 @@ static int process_sql_repeat (char *sql)
 		timeval_latency (&t_lat, &t_before, &t_after);
 		elapsed = timeval_to_sec (&t_lat);
 
-		repeat_latency[i] = elapsed;
+		printf("## [%3llu]: %.6f\n", _llu(i), elapsed);
 	}
-
-	for (i = 0; i < control->repeat; i++)
-		printf("## [%3llu]: %.6f\n", _llu(i), repeat_latency[i]);
 
 	return ret;
 }
@@ -509,6 +536,7 @@ static struct option opts[] = {
 	{ .name = "mute", .has_arg = 0, .flag = NULL, .val = 'm' },
 	{ .name = "null", .has_arg = 0, .flag = NULL, .val='z' },
 	{ .name = "num-clients", .has_arg = 1, .flag = NULL, .val = 'n' },
+	{ .name = "repeat", .has_arg = 1, .flag = NULL, .val = 'r' },
 	{ .name = "slice", .has_arg = 1, .flag = NULL, .val = 's' },
 	{ .name = "sql", .has_arg = 1, .flag = NULL, .val = 'q' },
 	{ .name = "sql-file", .has_arg = 1, .flag = NULL, .val ='f' },
@@ -696,8 +724,8 @@ int main(int argc, char **argv)
 	control->repeat = repeat;
 
 	if (repeat > 0) {
-		repeat_latency = calloc(repeat, sizeof(double));
-		if (NULL == repeat_latency) {
+		slice_latency = calloc(n_clients, sizeof(double));
+		if (NULL == slice_latency) {
 			perror("memory allocation failed");
 			goto out_nolatency;
 		}

@@ -7146,6 +7146,8 @@ struct _dht_ipc_data {
 	uint64_t    pos;
 	int         call_cnt;
 	gf_lock_t   lock;
+
+	struct timeval t_ipc;
 };
 
 typedef struct _dht_ipc_data dht_ipc_data_t;
@@ -7166,6 +7168,25 @@ static inline int dht_ipc_return (dht_ipc_data_t *data)
         return this_call_cnt;
 }
 
+static inline double timeval_to_sec (struct timeval *t)
+{
+	double sec = 0.0F;
+
+	sec += t->tv_sec;
+	sec += (double) 0.000001 * t->tv_usec;
+
+	return sec;
+}
+
+static inline
+double timeval_timegap (struct timeval *before, struct timeval *after)
+{
+	double d1 = timeval_to_sec (before);
+	double d2 = timeval_to_sec (after);
+
+	return d2 - d1;
+}
+
 int32_t dht_ipc_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 		int32_t op_ret, int32_t op_errno, dict_t *xdata)
 {
@@ -7184,6 +7205,8 @@ int32_t dht_ipc_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 	uint64_t       count         = 0;
 	double         runtime       = .0F;
 	double         dbtime        = .0F;
+	double         latency       = .0F;
+	struct timeval t_now         = {0,};
 	char           keybuf[64]    = {0,};
 
         GF_VALIDATE_OR_GOTO ("dht", frame, out);
@@ -7210,6 +7233,9 @@ int32_t dht_ipc_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 
 	dict_req = ipc_data->xdata;
 
+	gettimeofday (&t_now, NULL);
+	latency = timeval_timegap(&ipc_data->t_ipc, &t_now);
+
 	LOCK (&ipc_data->lock);
 	{
 		for (i = 0; i < xcnt; i++) {
@@ -7220,6 +7246,11 @@ int32_t dht_ipc_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 				(unsigned long long) ipc_data->pos++);
 			dict_set (dict_req, keybuf, data);
 		}
+
+		sprintf (keybuf, "%s:latency", xlname);
+		ret = dict_set_double (dict_req, keybuf, latency);
+		if (ret)
+			goto unlock;
 
 		if (dbtime > 0.0F) {
 			sprintf (keybuf, "%s:dbtime", xlname);
@@ -7302,7 +7333,7 @@ int dht_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata)
 		if (cmask[i])
 			call_cnt++;
 
-	ipc_data = CALLOC (1, sizeof (*ipc_data));
+	ipc_data = CALLOC (1, sizeof(*ipc_data));
 	if (!ipc_data)
 		goto err;
 
@@ -7325,6 +7356,8 @@ int dht_ipc (call_frame_t *frame, xlator_t *this, int32_t op, dict_t *xdata)
 		dict_unref (ipc_data->xdata);
 		goto err;
 	}
+
+	gettimeofday (&ipc_data->t_ipc, NULL);
 
 	for (i = 0; i < conf->subvolume_cnt; i++) {
 		if (!cmask[i])
