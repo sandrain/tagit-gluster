@@ -160,6 +160,12 @@ static ixsql_cmd_handler_t ixsql_handlers [] =
 	  .help = "Print or set the query result slice count.",
 	  .func = ixsql_cmd_slice,
 	},
+#if 0
+	{ .key	= ".verbose",
+	  .help = "Print or set the verbose setting.",
+	  .func = ixsql_cmd_slice,
+	},
+#endif
 
 	{ 0, 0, 0 },
 };

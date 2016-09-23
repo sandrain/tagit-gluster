@@ -111,37 +111,43 @@ static int read_client_number (glfs_t *fs, char *volname)
 }
 
 static int
-print_metadata_fn (dict_t *dict, char *key, data_t *value, void *data)
+process_metadata_fn (dict_t *dict, char *key, data_t *value, void *data)
 {
-	int ret        = 0;
-	int32_t op_ret = 0;
-	int32_t comeback = 0;
-	uint64_t count = 0;
-	double runtime = .0F;
-	double dbtime  = .0F;
-	char *pos      = NULL;
-	FILE *out      = stdout;
+	int ret              = 0;
+	int32_t op_ret       = 0;
+	int32_t comeback     = 0;
+	uint64_t count       = 0;
+	double runtime       = .0F;
+	double dbtime        = .0F;
+	char *pos            = NULL;
+	FILE *out            = stdout;
+	uint64_t *res_count  = (uint64_t *) data;
 
 	if (NULL != (pos = strstr (key, ":ret"))) {
 		op_ret = data_to_int32 (value);
-		fprintf (out, "## %s = %d\n", key, op_ret);
+		if (verbose)
+			fprintf (out, "## %s = %d\n", key, op_ret);
 	}
 	else if (NULL != (pos = strstr (key, ":count"))) {
 		count = data_to_uint64 (value);
-		fprintf (out, "## %s = %llu\n",
-					     key, _llu (count));
+		*res_count = *res_count + count;
+		if (verbose)
+			fprintf (out, "## %s = %llu\n", key, _llu (count));
 	}
 	else if (NULL != (pos = strstr (key, ":runtime"))) {
 		ret = dict_get_double (dict, key, &runtime);
-		fprintf (out, "## %s = %.6f\n", key, runtime);
+		if (verbose)
+			fprintf (out, "## %s = %.6f\n", key, runtime);
 	}
 	else if (NULL != (pos = strstr (key, ":dbtime"))) {
 		ret = dict_get_double (dict, key, &dbtime);
-		fprintf (out, "## %s = %.6f\n", key, dbtime);
+		if (verbose)
+			fprintf (out, "## %s = %.6f\n", key, dbtime);
 	}
 	else if (NULL != (pos = strstr (key, ":comeback"))) {
 		ret = dict_get_int32 (dict, key, &comeback);
-		fprintf (out, "## %s = %d\n", key, comeback);
+		if (verbose)
+			fprintf (out, "## %s = %d\n", key, comeback);
 	}
 	else {
 		/* no idea, ignore for now. */
@@ -150,6 +156,7 @@ print_metadata_fn (dict_t *dict, char *key, data_t *value, void *data)
 	return ret;
 }
 
+#if 0
 static int
 update_result_count_fn (dict_t *dict, char *key, data_t *value, void *data)
 {
@@ -159,6 +166,7 @@ update_result_count_fn (dict_t *dict, char *key, data_t *value, void *data)
 
 	return 0;
 }
+#endif
 
 static inline int print_data (ixsql_query_t *query)
 {
@@ -188,6 +196,29 @@ out:
 	return ret;
 }
 
+static inline int print_query_result (dict_t *result, uint64_t count)
+{
+	int ret = 0;
+	uint64_t i = 0;
+        char keybuf[16] = { 0, };
+	char *row       = NULL;
+
+	for (i = 0; i < count; i++) {
+		sprintf (keybuf, "%llu", _llu (i));
+                ret = dict_get_str (result, keybuf, &row);
+		if (ret)
+			goto out;
+
+		/* put the '\n' if it doesn't have already */
+		fputs (row, control->fp_output);
+		if (row[strlen(row) -1] != '\n')
+			fputc('\n', control->fp_output);
+	}
+
+out:
+	return ret;
+}
+
 static inline int64_t print_better_result (ixsql_query_t *query)
 {
 	int ret        = 0;
@@ -200,13 +231,7 @@ static inline int64_t print_better_result (ixsql_query_t *query)
 	if (ret)
 		goto err;
 
-	if (verbose) {
-		ret = dict_foreach_fnmatch (result, "*:*",
-					    print_metadata_fn, query);
-	}
-
-	if (!control->mute)
-		ret = print_data (query);
+	ret = print_data (query);
 err:
 	if (ret)
 		ret = -1;
@@ -221,7 +246,7 @@ static inline int process_sql_sliced (ixsql_query_t *query)
 	int ret                = 0;
 	int offset             = 0;
 	int count              = 0;
-	int64_t res_count      = 0;
+	uint64_t res_count     = 0;
 	char *session          = NULL;
 	int32_t comeback       = 0;
 	ixsql_query_t my_query = { 0, };
@@ -243,12 +268,30 @@ static inline int process_sql_sliced (ixsql_query_t *query)
 		if (ret)
 			goto out;
 
-		ret = dict_foreach_fnmatch (my_query.result, "*:count",
-				            update_result_count_fn, &my_query);
-
-		res_count = print_better_result (&my_query);
-		if (res_count == -1)
+		ret = dict_foreach_fnmatch (my_query.result, "*:*",
+					    process_metadata_fn, &res_count);
+		if (!ret) {
+			ret = -1;
 			goto out;
+		}
+		ret = 0;
+
+		if (!control->mute) {
+			ret = print_query_result (my_query.result, res_count);
+#if 0
+			ret = dict_foreach_fnmatch (my_query.result, "*:count",
+						    update_result_count_fn,
+						    &my_query);
+			if (!ret) {
+				ret = -1;
+				goto out;
+			}
+			ret = 0;
+			res_count = print_better_result (&my_query);
+			if (res_count == -1)
+				goto out;
+#endif
+		}
 
 		ret = dict_get_int32 (my_query.result, "comeback", &comeback);
 		if (ret)
