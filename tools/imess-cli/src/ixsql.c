@@ -127,23 +127,15 @@ process_result_count_fn (dict_t *dict, char *key, data_t *value, void *data)
 static int
 process_latency_fn (dict_t *dict, char *key, data_t *value, void *data)
 {
-	int i = 0;
 	int ret = 0;
 	double latency = .0F;
 
 	ret = dict_get_double (dict, key, &latency);
 	if (0 == ret) {
-		slice_latency[latency_idx++] = latency;
+		slice_latency[latency_idx] += latency;
 
-		if (latency_idx == control->num_clients) {
-			printf("## ===== ");
-			for (i = 0; i < control->num_clients; i++) {
-				printf("%.6f%c", slice_latency[i],
-					i+1 == control->num_clients ?'\n' : ',');
-			}
-
+		if (++latency_idx == control->num_clients)
 			latency_idx = 0;
-		}
 	}
 
 	return ret;
@@ -373,6 +365,7 @@ static int process_sql_repeat (char *sql)
 {
         int ret                 = 0;
 	uint64_t i              = 0;
+	uint64_t s              = 0;
 	struct timeval t_before = { 0, };
 	struct timeval t_after  = { 0, };
 	struct timeval t_lat    = { 0, };
@@ -388,7 +381,13 @@ static int process_sql_repeat (char *sql)
 		timeval_latency (&t_lat, &t_before, &t_after);
 		elapsed = timeval_to_sec (&t_lat);
 
-		printf("## [%3llu]: %.6f\n", _llu(i), elapsed);
+		printf("## [%3llu]: ", _llu(i));
+		for (s = 0; s < control->num_clients; s++) {
+			printf("%.6f,", slice_latency[s]);
+			slice_latency[s] = 0.0F;
+		}
+
+		printf("%.6f\n", elapsed);
 	}
 
 	return ret;
