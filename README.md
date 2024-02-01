@@ -30,6 +30,8 @@ Also, TagIt adds some more entries into the
 [meta](https://github.com/sandrain/tagit-gluster/tree/tagit/xlators/meta/src)
 translator.
 
+A quick code diff is available [here](https://github.com/sandrain/tagit-gluster/compare/0cd03d6fc98ee103d05fe80887bd471503575723..tagit).
+
 ### Orignal README from GlusterFS
 
 For information about contributing to GlusterFS, please follow the below link :
